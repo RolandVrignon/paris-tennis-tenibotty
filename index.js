@@ -15,6 +15,7 @@ import { loadMonitoringConfig, resolveBookingProfile, VARIABLE_CONFIG_KEYS } fro
 import { authenticatePage } from './lib/site-session.js'
 import { guardMonitorPage } from './lib/availability-monitor.js'
 import { searchBookingTarget, clickBookingCandidate } from './lib/booking-search.js'
+import { preparePayment } from './lib/payment.js'
 
 dayjs.extend(customParseFormat)
 
@@ -155,18 +156,9 @@ const bookTennis = async (config, { leg = 0, targetsOverride, searchStartOverrid
       const isFreeBooking = paymentSummary.includes('Gratuité')
       debugLog(`payment-step-ready free=${isFreeBooking} summary=${JSON.stringify(paymentSummary.replace(/\s+/g, ' ').trim())}`)
 
-      if (!isFreeBooking) {
-        const paymentMode = page.locator('#order_select_payment_form #paymentMode')
-        await paymentMode.waitFor({ state: 'attached' })
-        await paymentMode.evaluate(el => {
-          el.removeAttribute('readonly')
-          el.style.display = 'block'
-        })
-        await paymentMode.fill('existingTicket')
-        debugLog('paid-payment-mode-selected value=existingTicket')
-      } else {
-        console.log(`${dayjs().format()} - Free price detected`)
-      }
+      if (isFreeBooking) console.log(`${dayjs().format()} - Free price detected`)
+      const paymentSubmit = await preparePayment(page, { free: isFreeBooking })
+      debugLog(`payment-card-selected mode=${isFreeBooking ? 'free' : 'existingTicket'} next-step-enabled=true`)
 
       if (DRY_RUN_MODE) {
         console.log(`${dayjs().format()} - Fausse réservation faite : ${logLocation}`)
@@ -189,20 +181,8 @@ const bookTennis = async (config, { leg = 0, targetsOverride, searchStartOverrid
       }
 
       report('submitted')
-      if (isFreeBooking) {
-        const freePrice = page.locator('.priceTable .price-item[paymentMode="free"]')
-        debugLog(`free-price-options=${await freePrice.count()}`)
-        await freePrice.click()
-        canAbortBooking = false
-        const freeSubmit = page.locator('.step-two #submit:not(.disabled)')
-        debugLog(`free-submit-options=${await freeSubmit.count()}`)
-        await freeSubmit.click()
-      } else {
-        const submit = page.locator('#order_select_payment_form #envoyer')
-        await submit.evaluate(el => el.classList.remove('hide'))
-        canAbortBooking = false
-        await submit.click()
-      }
+      canAbortBooking = false
+      await paymentSubmit.click()
       debugLog('payment-step-submitted')
 
       await page.waitForSelector('.confirmReservation')

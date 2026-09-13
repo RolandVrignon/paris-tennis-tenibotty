@@ -366,7 +366,7 @@ npm run start-dry-headed
 npm run reservations:list
 ```
 
-Le dry-run se connecte, cherche un créneau, ajoute les partenaires et atteint l’étape de paiement. Il annule ensuite la réservation temporaire **avant confirmation**, quel que soit le tarif. Vérifie le compte après le test : le message « Fausse réservation faite » s’affiche avant l’annulation et ne suffit pas à prouver sa réussite.
+Le dry-run se connecte, cherche un créneau, ajoute les partenaires et sélectionne la carte de paiement : crédit horaire existant ou gratuité. Il vérifie que « Étape suivante » s’active, puis annule la réservation temporaire **sans confirmer ni consommer de crédit**. Si aucun crédit compatible n’est proposé, le test échoue explicitement. Vérifie le compte après le test : le message « Fausse réservation faite » s’affiche avant l’annulation et ne suffit pas à prouver sa réussite.
 
 Une fois ce parcours validé, cette commande effectue une **réservation réelle immédiate** :
 

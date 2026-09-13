@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { chromium } from 'playwright'
-import { selectBookingDate } from '../lib/booking-page.js'
+import { selectBookingDate, waitForSearchPage } from '../lib/booking-page.js'
 
 test('calendar refresh must finish before classifying a date as unavailable', async t => {
   const browser = await chromium.launch({ headless: true })
@@ -41,4 +41,14 @@ test('a stalled calendar load is an error rather than evidence of unavailable da
   await assert.rejects(selectBookingDate(page, '20/09/2026', {
     allowUnavailable: true, deadline: Date.now() + 500,
   }), { name: 'TimeoutError' })
+})
+
+test('a leftover reservation is reported immediately instead of a misleading CAPTCHA timeout', async t => {
+  const browser = await chromium.launch({ headless: true })
+  t.after(() => browser.close())
+  const page = await browser.newPage()
+  await page.setContent('<div class="order-steps-infos"><h2>1 / 3 - Validation du court</h2></div><button id="btnCancelBooking">Cancel</button>')
+  await page.evaluate(() => { document.querySelector('#btnCancelBooking').onclick = () => { document.body.dataset.cancelled = 'true' } })
+  await assert.rejects(waitForSearchPage(page, { ai: { enable: false }, timeoutMs: 500 }), /unfinished reservation/)
+  assert.equal(await page.locator('body').getAttribute('data-cancelled'), null)
 })

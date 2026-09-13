@@ -55,9 +55,9 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
     } else if (url.pathname === '/payment') {
       observed.partners.push({account, hour, players: url.searchParams.getAll('player1')})
       html = `<div class="order-steps-infos"><h2>2 / 3 - Mode de paiement</h2></div>
-      <div class="priceTable">${account === 'booking' ? '<button class="price-item" paymentMode="free">Gratuité</button>' : 'Tarif plein'}</div>
-      ${account !== 'booking' ? `<form id="order_select_payment_form" action="/confirm"><input type="hidden" name="sport" value="${sport}"><input type="hidden" name="hour" value="${hour}"><input id="paymentMode" name="paymentMode" readonly style="display:none"><button id="envoyer" class="hide">Pay with ticket</button></form>` : ''}
-      <a id="previous" href="/partners?sport=${sport}&hour=${hour}">Previous</a><div class="step-two"><a id="submit" href="/confirm?sport=${sport}&hour=${hour}">Confirm</a></div>`
+      <div class="priceTable"><button type="button" class="price-item" paymentMode="${account === 'booking' ? 'free' : 'existingTicket'}" onclick="document.querySelector('#submit').classList.remove('disabled');document.querySelector('#submit').disabled=false">${account === 'booking' ? 'Gratuité' : 'J’utilise 1 heure de mon carnet en ligne — Tarif plein'}</button></div>
+      <a id="previous" href="/partners?sport=${sport}&hour=${hour}">Previous</a>
+      <div class="step-two"><form action="/confirm"><input type="hidden" name="sport" value="${sport}"><input type="hidden" name="hour" value="${hour}">${account === 'booking' ? '' : '<input type="hidden" name="paymentMode" value="existingTicket">'}<button id="submit" class="disabled" disabled>Etape suivante</button></form></div>`
     } else if (url.pathname === '/confirm') {
       observed.paymentModes.push(url.searchParams.get('paymentMode'))
       observed.submissions.push(sport)

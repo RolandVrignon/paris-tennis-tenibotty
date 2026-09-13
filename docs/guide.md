@@ -114,7 +114,7 @@ Les libellés doivent correspondre exactement à ceux de Paris Tennis :
 
 Pour le tarif gratuit, utiliser **`"priceType": ["Gratuité"]`**. Les valeurs `Gratuit`, `gratuit` ou `free` ne correspondent pas. Ce paramètre filtre les créneaux ; il ne modifie pas les droits du compte.
 
-Plusieurs valeurs peuvent être acceptées, mais leur ordre ne définit pas une priorité. Le parcours payant utilise un carnet existant. Le parcours gratuit sélectionne la carte « Gratuité », puis « Etape suivante », sans accéder au champ de paiement des comptes payants.
+Plusieurs valeurs peuvent être acceptées, mais leur ordre ne définit pas une priorité. Le parcours payant sélectionne la carte « J’utilise 1 heure de mon carnet en ligne » (`paymentMode="existingTicket"`), attend que « Etape suivante » soit activé par le site, puis valide. Il accepte le solde compatible proposé par le site, y compris les heures recréditées. Le parcours gratuit sélectionne de la même façon la carte « Gratuité ». Aucun champ caché ni bouton désactivé n’est forcé. Si le site ne propose pas le crédit attendu, le programme s’arrête sans paiement par carte bancaire.
 
 ### Préférences de réservation
 
@@ -247,7 +247,7 @@ Commencer par un dry-run avec navigateur visible :
 npm run start-dry-headed
 ```
 
-Le test se connecte, cherche un créneau et va jusqu’à l’étape de paiement. Il annule ensuite la réservation temporaire, avant confirmation. Ce parcours est commun aux tarifs gratuit et payants.
+Le test se connecte, cherche un créneau et va jusqu’à l’étape de paiement. Il sélectionne la carte du crédit existant (ou de gratuité), vérifie que le bouton suivant s’active, puis annule la réservation temporaire sans cliquer sur ce bouton. Ce parcours est commun aux tarifs gratuit et payants.
 
 | Commande | Usage |
 | --- | --- |
