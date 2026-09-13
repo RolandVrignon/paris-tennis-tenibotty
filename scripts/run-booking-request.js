@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { setTimeout as wait } from 'node:timers/promises'
 import dayjs from 'dayjs'
-import { buildBookingConfig, normalizeBookingRequest, getBookingSchedule } from '../lib/booking-request.js'
+import { buildBookingConfig, normalizeBookingRequest, getBookingSchedule, describeBookingChoices } from '../lib/booking-request.js'
 import { bookingJobOptions, claimBookingJob, updateBookingJob } from '../lib/booking-job.js'
 import { acquireOperationLock } from '../lib/operation-lock.js'
 import { classifyBookingResult } from '../lib/booking-result.js'
@@ -80,7 +80,7 @@ try {
     })
     const status = classifyBookingResult({ exitCode, outcome, dryRun: request.dryRun })
     updateBookingJob(record.id, { status, outcome, exitCode, logFile, completedAt: new Date().toISOString() }, options)
-    const label = `${request.date} à ${request.hours.join('/')}h — ${Array.isArray(request.locations) ? request.locations.join(', ') : Object.keys(request.locations).join(', ')}`
+    const label = `${request.date} — priorités : ${describeBookingChoices(request)}`
     const messages = {
       succeeded: `✅ Réservation Paris Tennis confirmée : ${label}.`,
       succeeded_with_warnings: `⚠️ Réservation Paris Tennis confirmée : ${label}. Une étape après réservation a échoué ; ne pas relancer. Journal : ${logFile}`,

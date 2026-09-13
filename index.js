@@ -10,14 +10,14 @@ import { parseClubCatalog, resolveClub } from './lib/clubs.js'
 import { reportBookingResult } from './lib/booking-result.js'
 import { bookingJobOptions } from './lib/booking-job.js'
 import { acquireOperationLock } from './lib/operation-lock.js'
-import { normalizeSport, validateSportPlayers, selectClubCourts } from './lib/sport.js'
+import { selectClubCourts } from './lib/sport.js'
+import { getBookingTargets } from './lib/booking-request.js'
 import { selectBookingDate, readPriceDescription } from './lib/booking-page.js'
 
 dayjs.extend(customParseFormat)
 
 const bookTennis = async () => {
-  const sport = normalizeSport(config.sport)
-  validateSportPlayers(sport, config.players)
+  const targets = getBookingTargets(config)
   const DRY_RUN_MODE = process.argv.includes('--dry-run')
   const HEADED_MODE = process.argv.includes('--headed')
   const DEBUG_MODE = process.argv.includes('--debug')
@@ -30,7 +30,7 @@ const bookTennis = async () => {
     console.log('Script lancé en mode DRY RUN. Afin de tester votre configuration, une recherche va être lancé mais AUCUNE réservation ne sera réalisée')
   }
 
-  console.log(`${dayjs().format()} - Starting searching ${sport}`)
+  console.log(`${dayjs().format()} - Starting searching ${[...new Set(targets.map(target => target.sport))].join(' → ')}`)
   const browser = await chromium.launch({
     headless: !HEADED_MODE,
     slowMo: HEADED_MODE ? 250 : 0,
@@ -63,12 +63,12 @@ const bookTennis = async () => {
 
     console.log(`${dayjs().format()} - User connected`)
 
-    const locations = !Array.isArray(config.locations) ? Object.keys(config.locations) : config.locations
     locationsLoop:
-    for (const [i, requestedLocation] of locations.entries()) {
+    for (const [i, target] of targets.entries()) {
+      const { sport, location: requestedLocation, courtNumbers, hours, courtType: courtTypes, priority } = target
       let location = requestedLocation
       const logLocation = process.env.GITHUB_ACTIONS ? `location ${i + 1}` : location
-      console.log(`${dayjs().format()} - Search at ${logLocation}`)
+      console.log(`${dayjs().format()} - Search ${sport} at ${logLocation} (priority ${priority + 1})`)
       await page.goto('https://tennis.paris.fr/tennis/jsp/site/Portal.jsp?page=recherche&view=recherche_creneau#!')
       debugLog(`search-page-loaded location=${JSON.stringify(logLocation)} title=${JSON.stringify(await page.title())}`)
 
@@ -76,7 +76,6 @@ const bookTennis = async () => {
       await waitForStep(page, '.tokens-input-text', captchaOptions)
       const catalog = parseClubCatalog(await page.content())
       location = resolveClub(catalog, requestedLocation).name
-      const courtNumbers = !Array.isArray(config.locations) ? config.locations[requestedLocation] : []
       const allowedCourtIds = selectClubCourts(catalog, location, { sport, courtNumbers })
       await page.locator('.tokens-input-text').pressSequentially(`${location} `)
       const suggestion = page.locator('.tokens-suggestions-list-element').getByText(location, { exact: true })
@@ -93,7 +92,7 @@ const bookTennis = async () => {
 
       let selectedHour
       hoursLoop:
-      for (const hour of config.hours) {
+      for (const hour of hours) {
         const dateDeb = `[datedeb="${date.format('YYYY/MM/DD')} ${hour}:00:00"]`
         if (await page.locator(dateDeb).count()) {
           if (await page.isHidden(dateDeb)) {
@@ -107,7 +106,7 @@ const bookTennis = async () => {
             if (!allowedCourtIds.has(courtId)) continue
 
             const { priceType, courtType } = await readPriceDescription(page.locator(`.row.tennis-court:has(${bookSlotButton})`).locator('.price-description'))
-            if (!config.priceType.includes(priceType) || !config.courtType.includes(courtType)) {
+            if (!config.priceType.includes(priceType) || !courtTypes.includes(courtType)) {
               continue
             }
             selectedHour = hour
@@ -121,7 +120,7 @@ const bookTennis = async () => {
         }
       }
 
-      if (await page.title() !== 'Paris | TENNIS - Reservation') {
+      if (!selectedHour) {
         console.log(`${dayjs().format()} - Failed to find reservation for ${logLocation}`)
         continue
       }

@@ -189,6 +189,26 @@ Le compte gratuit conserve `"priceType": ["Gratuité"]`. Pour un tarif payant, c
 
 Valider le parcours avec un dry-run : la seule détection de pistes disponibles ou l’accès au checkout ne prouve pas la réussite d’une réservation.
 
+## Repli du padel vers le tennis
+
+Ajouter `fallbacks` aux préférences pour essayer plusieurs sports dans l’ordre. Exemple : padel à Jules Ladoumègue à 20 h, puis tennis à Pailleron à la même heure :
+
+```json
+{
+  "sport": "padel",
+  "locations": ["Padel Jules Ladoumègue"],
+  "hours": ["20"],
+  "courtType": ["Couvert"],
+  "fallbacks": [
+    { "sport": "tennis", "locations": ["Edouard Pailleron"] }
+  ]
+}
+```
+
+Cet extrait complète la configuration : conserver `players` et ajouter `date` pour Hermes. Chaque repli exige `sport` et `locations` ; ses `hours` et `courtType` sont facultatifs et reprennent les valeurs principales s’ils sont omis. Le compte, les partenaires, la date et le tarif sont communs.
+
+Le script passe au choix suivant quand aucun créneau ne correspond. Il s’arrête après une réservation ou un dry-run annulé. Une erreur de CAPTCHA, de checkout ou une confirmation incertaine arrête la tentative ; elle ne déclenche pas une seconde réservation. Une seule tâche Hermes exécute toute la liste de priorités.
+
 <a id="tarifs"></a>
 ## Gratuité comprise
 

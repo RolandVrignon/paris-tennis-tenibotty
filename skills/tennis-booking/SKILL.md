@@ -24,6 +24,14 @@ For padel on Paris Tennis, set `sport` to `padel` and resolve `Padel Jules Ladou
 
 Accept one to three partners in addition to the account holder, as for tennis. Do not require three partners for padel: the user has manually reached checkout with one partner. Never duplicate a partner or invent identities to complete the request. Use the site's court type (`Couvert` on the currently inspected listings), and keep the fixed account tariff unchanged. Add a target date for scheduling. `sport` defaults to `tennis` for existing requests; include `sport: "padel"` explicitly in padel staging JSON, edits and the user summary. The repository includes `config.padel.json.sample` for local use. The CAPTCHA, payment and dry-run cancellation rules are the same.
 
+## Ordered sport fallbacks
+
+A request can include `fallbacks`, an ordered array of choices. Each entry requires `sport` and `locations`; optional `hours` and `courtType` default to the primary choice's values. Keep `date`, `players`, account, tariff and `dryRun` at request level. For padel first and tennis second at 20h, use primary `sport: "padel"`, `locations: ["Padel Jules Ladoumègue"]`, `hours: ["20"]`, plus `fallbacks: [{"sport":"tennis","locations":["Edouard Pailleron"]}]`.
+
+Resolve every club, including fallback clubs, and preserve the explicit order in staging JSON, edits and the user summary. Use one booking request and one cron for the entire sequence. For an existing pending request, edit that request and update the cron display name; preserve its script, schedule and delivery target. Passing `fallbacks: []` removes fallbacks. Never create parallel jobs for mutually exclusive alternatives.
+
+The runner tries the next choice only when no compatible slot was selected. It stops after confirmation or a cancelled dry-run. A CAPTCHA error, checkout error or uncertain confirmation fails the run and does not trigger a fallback. Report the attempted priorities separately from the court actually confirmed.
+
 ## Reservations already on the account
 
 ```sh
@@ -103,7 +111,7 @@ node '{{PROJECT_DIR}}/scripts/booking-manager.js' cancel --request-id <id>
 
 This disables local execution and retains its audit record. Then remove the associated Hermes cron with `cronjob action=remove` and its `cronJobId`. If Hermes removal fails, explain that local execution is disabled but the cron still needs removal. This does not cancel an already confirmed account reservation. Running requests cannot be cancelled this way.
 
-To change clubs, hours, partners or court type for the same target date, present the replacement request and use existing authorization or obtain it. Write the complete variable request to a protected staging file, then:
+To change clubs, sport, fallbacks, hours, partners or court type for the same target date, present the replacement request and use existing authorization or obtain it. Write the complete variable request to a protected staging file, then:
 
 ```sh
 node '{{PROJECT_DIR}}/scripts/booking-manager.js' edit --request-id <id> --input <staging-file>

@@ -131,6 +131,7 @@ Plusieurs valeurs peuvent être acceptées, mais leur ordre ne définit pas une 
 
 | Champ | Utilisation |
 | --- | --- |
+| `fallbacks` | Liste ordonnée de replis : `sport` et `locations` obligatoires ; `hours` et `courtType` facultatifs, hérités du choix principal. |
 | `sport` | `tennis` par défaut ; `padel` pour les pistes de padel. Le mode padel accepte un à trois partenaires. |
 | `locations` | Clubs par ordre de préférence ; leurs noms sont vérifiés avant réservation. |
 | `date` | Date du terrain au format `D/M/YYYY` ou `DD/MM/YYYY`. Facultative en lancement direct : sans date, le script cherche à J+6. Obligatoire pour une demande Hermes. |
@@ -209,6 +210,29 @@ TENNIS_REQUEST_CONFIG_PATH=./config.padel.json npm run start-dry-headed
 `config.padel.json` est ignoré par Git. Le compte, le tarif et les notifications restent dans `config.fixed.json`. Les créneaux padel consultés sur le site portent le type `Couvert` et proposent `Gratuité` pour un compte éligible. Les parcours payants conservent l’exigence d’un carnet compatible. Le programme ne modifie pas les droits du compte.
 
 Pour une demande programmée, ajouter une date explicite et utiliser le même fichier variable avec `booking:manage prepare --input`. Pour un dry-run Hermes, ajouter le booléen `dryRun: true` ; pour un dry-run direct, utiliser la commande dédiée. Sans `sport`, les demandes existantes restent en tennis. Un club nommé Padel avec le mode tennis est refusé pour éviter une confusion.
+
+## Replis entre sports
+
+La configuration principale est essayée en premier, puis les entrées de `fallbacks` dans l’ordre. Chaque choix épuise ses clubs, puis leurs heures, avant de passer au suivant. Un repli peut être du même sport ou d’un autre sport.
+
+Pour conserver une priorité padel puis tennis à 20 h, ajouter aux préférences padel :
+
+```json
+"fallbacks": [
+  {
+    "sport": "tennis",
+    "locations": ["Edouard Pailleron"],
+    "hours": ["20"],
+    "courtType": ["Couvert"]
+  }
+]
+```
+
+Les heures et types de terrain peuvent différer par repli. En leur absence, les valeurs du choix principal s’appliquent. Les numéros de courts dans `locations` restent possibles. Les partenaires, le compte, le tarif, la date et le mode dry-run s’appliquent à toute la demande ; ils ne peuvent pas être remplacés dans un repli.
+
+Hermes vérifie les noms de tous les clubs et conserve la liste complète dans la demande. Modifier une tâche existante avec `booking:manage edit --request-id <id> --input <fichier>` et la configuration complète ; fournir `fallbacks: []` pour supprimer les replis. L’horaire de lancement et le cron restent attachés à la même demande. Ne pas créer un second cron pour le tennis de secours.
+
+L’absence de créneau compatible déclenche le repli. Dès qu’un créneau est sélectionné, le checkout doit aboutir ou la tâche échoue ; les erreurs ne déclenchent pas de repli. Après confirmation, ou après annulation réussie du dry-run, la recherche s’arrête. Les logs indiquent le sport et la priorité ; le fichier ICS porte le sport effectivement réservé.
 
 ## Tester et réserver
 
