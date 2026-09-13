@@ -3,6 +3,8 @@ config.json
 config.fixed.json
 config.request.json
 config.padel.json
+.config*.json.sw?
+config*.json~
 img/
 logs/
 *.ics
