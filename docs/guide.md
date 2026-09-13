@@ -131,6 +131,7 @@ Plusieurs valeurs peuvent être acceptées, mais leur ordre ne définit pas une 
 
 | Champ | Utilisation |
 | --- | --- |
+| `polling` | Option de recherche répétée : `intervalSeconds` (2 à 60), `durationSeconds` (au plus 600), `fallbackMode` (`after-window` par défaut ou `each-cycle`). Sans ce champ, un seul passage. |
 | `fallbacks` | Liste ordonnée de replis : `sport` et `locations` obligatoires ; `hours` et `courtType` facultatifs, hérités du choix principal. |
 | `sport` | `tennis` par défaut ; `padel` pour les pistes de padel. Le mode padel accepte un à trois partenaires. |
 | `locations` | Clubs par ordre de préférence ; leurs noms sont vérifiés avant réservation. |
@@ -232,7 +233,7 @@ Les heures et types de terrain peuvent différer par repli. En leur absence, les
 
 Hermes vérifie les noms de tous les clubs et conserve la liste complète dans la demande. Modifier une tâche existante avec `booking:manage edit --request-id <id> --input <fichier>` et la configuration complète ; fournir `fallbacks: []` pour supprimer les replis. L’horaire de lancement et le cron restent attachés à la même demande. Ne pas créer un second cron pour le tennis de secours.
 
-L’absence de créneau compatible déclenche le repli. Dès qu’un créneau est sélectionné, le checkout doit aboutir ou la tâche échoue ; les erreurs ne déclenchent pas de repli. Après confirmation, ou après annulation réussie du dry-run, la recherche s’arrête. Les logs indiquent le sport et la priorité ; le fichier ICS porte le sport effectivement réservé.
+Sans `polling`, l’absence de créneau compatible déclenche le repli immédiatement. Avec `polling.fallbackMode: "after-window"`, les choix principaux sont répétés jusqu’à la fin de la fenêtre avant un passage unique sur les replis. Dès qu’un créneau est sélectionné, le checkout doit aboutir ou la tâche échoue ; les erreurs ne déclenchent pas de repli. Après confirmation, ou après annulation réussie du dry-run, la recherche s’arrête. Les logs indiquent le sport et la priorité ; le fichier ICS porte le sport effectivement réservé.
 
 ## Tester et réserver
 
@@ -377,15 +378,30 @@ Quelques formulations possibles :
 
 Hermes distingue une réservation déjà présente sur le compte d’une tentative future programmée. Avant une action réelle, il résout précisément l’objet concerné, lève les ambiguïtés et s’appuie sur l’autorisation explicite de l’utilisateur. Il utilise les commandes sécurisées du dépôt plutôt que d’inventer son propre parcours de réservation.
 
+### Recherche pendant la fenêtre d’ouverture
+
+Exemple à ajouter à une demande padel avec repli tennis :
+
+```json
+"polling": { "intervalSeconds": 2, "durationSeconds": 600, "fallbackMode": "after-window" }
+```
+
+Le choix principal est recherché de 8 h à 8 h 10, puis les replis sont essayés une seule fois. L’intervalle est un minimum entre débuts de recherche : si la réponse et son affichage prennent plus de deux secondes, le script attend leur fin. Le calendrier pas encore ouvert est réessayé dans cette fenêtre. Une réponse HTTP en erreur ou une page non reconnue n’est pas assimilée à un résultat vide.
+
+La fenêtre est ancrée sur l’ouverture stockée dans la demande, pas sur la fin de connexion. Le checkout d’un créneau sélectionné avant la limite et le passage final sur les replis peuvent finir après cette limite. Le mode `each-cycle` alterne les choix dans l’ordre pendant une seule fenêtre commune ; utiliser ce mode uniquement si une réservation de secours immédiate est souhaitée.
+
+L’expiration est journalisée et enregistrée avec `openingReviewRequired: true`, y compris si le repli réussit. Le message Hermes invite à revérifier les horaires d’ouverture et la disponibilité. Un résultat vide ne démontre pas une mauvaise heure d’ouverture : les terrains peuvent être bloqués ou déjà réservés. Aucune reprogrammation ni nouveau monitoring n’est créé automatiquement.
+
 ### Déroulement d’une réservation programmée
 
 1. Le helper valide la date, les clubs, les heures et les partenaires.
 2. Il calcule l’ouverture **six jours calendaires avant la date du terrain**, en `Europe/Paris`, en recalculant les décalages été/hiver.
 3. Hermes crée un job ponctuel pour **7 h 55**, avec `no_agent=true` : aucun modèle ne décide quoi réserver au moment du lancement.
-4. Le lanceur attend **8 h**, puis démarre Chromium et la connexion au compte.
-5. Le résultat est remis au chat/topic Telegram d’origine via Hermes.
+4. Chromium démarre à **7 h 55**, se connecte et attend **8 h** avant de commencer la recherche.
+5. Si `polling` est activé, les recherches se répètent au plus tôt à l’intervalle demandé, jusqu’à sélection ou expiration de la fenêtre. Chaque réponse et son affichage sont attendus ; une recherche lente retarde la suivante. En mode `after-window`, les replis sont essayés une fois après expiration.
+6. Le résultat est remis au chat/topic Telegram d’origine via Hermes.
 
-**8 h est l’heure de lancement du navigateur, pas une garantie de confirmation à 8 h.** Le réseau, la connexion, le CAPTCHA et la disponibilité du terrain influencent le résultat. Le lanceur refuse un départ plus de dix minutes avant l’ouverture ou plus d’une heure après.
+**8 h est l’heure prévue de début des recherches, pas une garantie de confirmation à 8 h.** Le réseau, la connexion, le CAPTCHA et la disponibilité du terrain influencent le résultat. Le lanceur refuse un départ plus de dix minutes avant l’ouverture, ou après la fin de la fenêtre si `polling` est activé (sinon, après une heure).
 
 Les paramètres variables restent dans une demande protégée. La configuration complète contenant les identifiants est créée temporairement avec le mode `600` juste avant l’exécution, puis supprimée lors du nettoyage du lanceur. Les demandes terminées ou annulées ne peuvent pas être rejouées.
 

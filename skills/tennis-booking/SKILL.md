@@ -32,6 +32,14 @@ Resolve every club, including fallback clubs, and preserve the explicit order in
 
 The runner tries the next choice only when no compatible slot was selected. It stops after confirmation or a cancelled dry-run. A CAPTCHA error, checkout error or uncertain confirmation fails the run and does not trigger a fallback. Report the attempted priorities separately from the court actually confirmed.
 
+## Opening search window
+
+For repeated opening-time searches, add request-level `polling: {"intervalSeconds":2,"durationSeconds":600,"fallbackMode":"after-window"}`. Preserve this field when editing an existing request. Without it, searches remain single-pass. The browser logs in during the 07:55 warmup, then waits for the stored 08:00 opening before searching. The ten-minute deadline is anchored to that opening, even when startup is late.
+
+The user prefers padel searches throughout the window, then one tennis fallback sweep: use `after-window`. Each search waits for its response and rendered slots or explicit empty results; the next starts no sooner than two seconds after the previous start and never overlaps it. A late opening at 08:00:30 can therefore be found. The final fallback sweep and checkout can finish after 08:10. Use `each-cycle` only when the user explicitly wants to accept a fallback during the window.
+
+On window expiration, the request records `openingReviewRequired: true` and the Hermes result includes an opening-review message, even if the fallback succeeds. Use the timestamped log to investigate; empty results do not prove that the opening rule is wrong. Do not silently change the schedule or claim monitoring has been reconfigured. No new monitoring task is automatically created by this flag. CAPTCHA and checkout errors still stop the attempt; never repeat a submitted reservation.
+
 ## Reservations already on the account
 
 ```sh
@@ -82,7 +90,7 @@ Set `dryRun=true` only for a requested test. Do not include `account`, `priceTyp
 node '{{PROJECT_DIR}}/scripts/booking-manager.js' prepare --input /tmp/tennis-booking-request-<unique-id>.json --consume
 ```
 
-Use the helper's `schedule`, `cronName`, `script`, and `requestId` exactly. It computes six calendar days before the target in Europe/Paris, including DST, with preparation at 07:55 and booking launch at 08:00. Never run `index.js` directly to schedule a real booking.
+Use the helper's `schedule`, `cronName`, `script`, and `requestId` exactly. It computes six calendar days before the target in Europe/Paris, including DST, with browser login at 07:55 and slot searches starting no earlier than 08:00. Never run `index.js` directly to schedule a real booking.
 
 Call Hermes `cronjob` with `action=create`, the returned `schedule`, `name=cronName`, `script`, `no_agent=true`, and `workdir={{PROJECT_DIR}}`. Omit `deliver` to preserve delivery to the originating chat/topic. Create only a one-shot job. Do not edit the Linux crontab.
 

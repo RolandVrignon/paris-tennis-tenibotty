@@ -53,7 +53,7 @@ Avec Hermes, la demande devient une tentative ponctuelle sur ton VPS. Tu peux en
 | **Garder un plan B** | Essaie les clubs dans l’ordre, puis tes heures préférées dans chaque club. |
 | **Choisir ton court** | Filtre les courts couverts ou découverts ; permet de limiter les numéros de courts par centre. |
 | **Profiter de ton tarif** | Gère `Gratuité`, `Tarif réduit` et `Tarif plein` selon les droits déjà actifs sur ton compte. |
-| **Tenter à l’ouverture** | Prépare une demande ponctuelle avec Hermes et lance le navigateur à 8 h, six jours avant le match. |
+| **Tenter à l’ouverture** | Prépare une demande ponctuelle avec Hermes et prépare le navigateur à 7 h 55 et commence les recherches à 8 h, six jours avant le match. |
 | **Tester avant de réserver** | Propose un dry-run visible qui va jusqu’au paiement puis libère la réservation temporaire. |
 | **Gérer la suite** | Consulte la réservation courante, l’annule sur demande et génère un événement ICS après confirmation. |
 
@@ -101,18 +101,18 @@ Le gestionnaire calcule son lancement **six jours calendaires avant la date du t
 | --- | --- |
 | **Tu prépares la demande** | Les clubs, horaires, types de courts et partenaires sont validés. |
 | **Hermes programme** | Il crée un cron ponctuel, attache son identifiant à la demande et vérifie la tâche. |
-| **07 h 55, à J−6 du match** | Le lanceur démarre sur le VPS et attend l’heure prévue. |
-| **08 h 00** | Chromium démarre, puis le script se connecte et cherche selon tes préférences. |
+| **07 h 55, à J−6 du match** | Chromium démarre sur le VPS, se connecte, puis attend l’heure prévue. |
+| **08 h 00** | La recherche commence ; avec `polling`, elle se répète dans la fenêtre configurée. |
 | **Après la tentative** | Le résultat revient au chat ou topic Telegram d’origine via Hermes. |
 
-Par exemple, un match le **21 septembre** correspond à un lancement le **15 septembre à 8 h** selon cette règle. Le bot ne démarre pas le navigateur avant 8 h et ne garantit pas une réservation à la seconde.
+Par exemple, un match le **21 septembre** correspond à un lancement le **15 septembre à 8 h** selon cette règle. Le navigateur se connecte avant 8 h ; aucune recherche de créneau ne commence avant l’ouverture prévue. Une confirmation à la seconde n’est pas garantie.
 
 ```mermaid
 flowchart LR
     A[Ta demande] --> B[Validation des clubs et préférences]
     B --> C[Cron ponctuel Hermes]
-    C --> D[Attente de 8 h]
-    D --> E[Connexion et recherche]
+    C --> D[Connexion à 7 h 55 puis attente de 8 h]
+    D --> E[Recherche et répétition si activée]
     E --> F{Mode choisi}
     F -->|Dry-run| G[Libération du créneau temporaire]
     F -->|Réel| H[Confirmation sur Paris Tennis]
@@ -207,7 +207,27 @@ Ajouter `fallbacks` aux préférences pour essayer plusieurs sports dans l’ord
 
 Cet extrait complète la configuration : conserver `players` et ajouter `date` pour Hermes. Chaque repli exige `sport` et `locations` ; ses `hours` et `courtType` sont facultatifs et reprennent les valeurs principales s’ils sont omis. Le compte, les partenaires, la date et le tarif sont communs.
 
-Le script passe au choix suivant quand aucun créneau ne correspond. Il s’arrête après une réservation ou un dry-run annulé. Une erreur de CAPTCHA, de checkout ou une confirmation incertaine arrête la tentative ; elle ne déclenche pas une seconde réservation. Une seule tâche Hermes exécute toute la liste de priorités.
+Sans recherche répétée, le script passe au choix suivant quand aucun créneau ne correspond. Il s’arrête après une réservation ou un dry-run annulé. Une erreur de CAPTCHA, de checkout ou une confirmation incertaine arrête la tentative ; elle ne déclenche pas une seconde réservation. Une seule tâche Hermes exécute toute la liste de priorités.
+
+## Attendre une ouverture retardée
+
+Ajouter cette option au même niveau que `sport`, `players` et `fallbacks` :
+
+```json
+"polling": {
+  "intervalSeconds": 2,
+  "durationSeconds": 600,
+  "fallbackMode": "after-window"
+}
+```
+
+Avec le choix principal padel et le repli tennis, le navigateur se connecte à **7 h 55**, cherche le padel à partir de **8 h**, puis relance une recherche au plus tôt toutes les **deux secondes**. Il attend chaque réponse et l’affichage des créneaux ou d’un résultat vide : aucune recherche ne se superpose à la précédente.
+
+À **8 h 10**, si aucun créneau padel compatible n’a été sélectionné, il arrête la recherche répétée et fait **un seul passage sur les replis tennis**. Le checkout et ce passage final peuvent donc se terminer après 8 h 10. Une sélection réussie arrête les recherches. Une erreur de CAPTCHA ou de checkout est signalée, sans relance de réservation.
+
+Le journal conserve les heures des tentatives et les résultats. L’expiration de la fenêtre ajoute `openingReviewRequired: true` à la demande et une indication dans le résultat Hermes : il faut revérifier l’ouverture et la disponibilité. Elle ne prouve pas que l’horaire est faux et ne modifie pas automatiquement l’horaire ni ne crée un nouveau monitoring.
+
+Sans `polling`, le parcours reste un seul passage. `fallbackMode: "each-cycle"` permet, si demandé, de vérifier tous les choix à chaque cycle. En lancement direct, la fenêtre commence au démarrage ; pour Hermes, sa fin reste fixée à l’ouverture prévue + dix minutes maximum, même si le lancement est retardé.
 
 <a id="tarifs"></a>
 ## Gratuité comprise

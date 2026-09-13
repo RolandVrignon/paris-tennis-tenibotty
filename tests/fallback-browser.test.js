@@ -16,15 +16,15 @@ const catalog = { features: Object.entries(names).map(([sport, name], i) => ({ p
 } })) }
 
 // Exercise the real entry point against a local site, with no account or network service.
-const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brokenHold = false, uncertainSubmit = false, padelPrice = 'Gratuité' } = {}) => {
+const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brokenHold = false, uncertainSubmit = false, padelPrice = 'Gratuité', polling, padelAfter = 0, searchDelay = 0, renderDelay = 0, startDelay = 0 } = {}) => {
   const root = mkdtempSync(join(tmpdir(), 'tennis-browser-fallback-'))
-  const observed = { searches: [], holds: [], submissions: [], aborts: 0 }
+  const observed = { searches: [], holds: [], submissions: [], aborts: 0, searchTimes: [], loginAt: null }
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://fixture')
     const sport = url.searchParams.get('sport') || 'padel'
     let html = ''
     if (url.pathname.endsWith('abortBooking')) { observed.aborts++; res.end('ok'); return }
-    if (url.pathname === '/login') html = '<div class="main-informations">Connected</div>'
+    if (url.pathname === '/login') { observed.loginAt = Date.now(); html = '<div class="main-informations">Connected</div>' }
     else if (url.searchParams.get('view') === 'start') html = '<button id="button_suivi_inscription">Login</button><form id="form-login" action="/login"><input id="username"><input id="password"><button>Connect</button></form>'
     else if (url.searchParams.get('page') === 'recherche') html = `<script>var tennis = ${JSON.stringify(catalog)};</script>
       <form action="/results"><input class="tokens-input-text"><input type="hidden" name="sport" id="sport">
@@ -34,9 +34,10 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
       <button id="rechercher">Search</button></form>`
     else if (url.pathname === '/results') {
       observed.searches.push(sport)
-      html = (sport === 'padel' ? padel : tennis)
+      observed.searchTimes.push(Date.now())
+      html = (sport === 'padel' ? padel && observed.searches.filter(value => value === 'padel').length > padelAfter : tennis)
         ? `<div class="row tennis-court"><div class="price-description">${sport === 'padel' ? padelPrice : 'Gratuité'}<br>Couvert</div><a courtid="${ids[sport]}" datedeb="2026/09/21 20:00:00" href="/hold?sport=${sport}">Book</a></div>`
-        : '<div>No slots</div>'
+        : '<div class="no-result">No slots</div>'
     } else if (url.pathname === '/hold' || url.pathname === '/partners') {
       if (url.pathname === '/hold') observed.holds.push(sport)
       html = brokenHold ? '<div>Hold failed</div>' : `<div class="order-steps-infos"><h2>1 / 3 - Validation du court</h2></div>
@@ -49,8 +50,10 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
       observed.submissions.push(sport)
       html = uncertainSubmit ? '<div>No confirmation received</div>' : `<div class="confirmReservation">Confirmed</div><div class="address">${names[sport]}</div><div class="date">21/09/2026 à 20h</div><div class="court">${sport} 1</div>`
     }
+    if (url.pathname === '/results' && renderDelay) html = `<div id="loadingComponent">Loading</div><script>setTimeout(() => { document.body.innerHTML = ${JSON.stringify(html)} }, ${renderDelay})</script>`
     res.setHeader('Content-Type', 'text/html; charset=utf-8')
-    res.end(html)
+    if (url.pathname === '/results' && searchDelay) setTimeout(() => res.end(html), searchDelay)
+    else res.end(html)
   })
   server.listen(0, '127.0.0.1')
   await once(server, 'listening')
@@ -61,28 +64,29 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
     .replaceAll('https://tennis.paris.fr', origin)
     .replace(/from '(\.\/[^']+)'/g, (_, path) => `from '${pathToFileURL(resolve(path)).href}'`)
     .replace('headed: HEADED_MODE, debug:', 'timeoutMs: 1000, headed: HEADED_MODE, debug:')
-    .replace('page.setDefaultTimeout(90000)', 'page.setDefaultTimeout(2000)')
+    .replaceAll('page.setDefaultTimeout(90000)', 'page.setDefaultTimeout(2000)')
   writeFileSync(join(root, 'index.mjs'), source)
   symlinkSync(resolve('node_modules'), join(root, 'node_modules'))
   const configPath = join(root, 'config.json')
   writeFileSync(configPath, JSON.stringify({
     account: { email: 'fixture@example.invalid', password: 'fixture' }, ai: { enable: false }, ntfy: { enable: false },
     sport: 'padel', date: '21/09/2026', locations: [names.padel], hours: ['20'], courtType: ['Couvert'], priceType: ['Gratuité'],
-    players: [{ firstName: 'Test', lastName: 'Partner' }], fallbacks: [{ sport: 'tennis', locations: [names.tennis] }],
+    players: [{ firstName: 'Test', lastName: 'Partner' }], polling, fallbacks: [{ sport: 'tennis', locations: [names.tennis] }],
   }))
+  const searchStart = Date.now() + startDelay
   const child = fork(join(root, 'index.mjs'), dryRun ? ['--dry-run'] : [], {
-    cwd: root, silent: true, env: { ...process.env, TENNIS_CONFIG_PATH: configPath, NTFY_TOPIC: '', GITHUB_ACTIONS: '' },
+    cwd: root, silent: true, env: { ...process.env, TENNIS_CONFIG_PATH: configPath, NTFY_TOPIC: '', GITHUB_ACTIONS: '', TENNIS_SEARCH_START_AT: new Date(searchStart).toISOString() },
   })
   t.after(() => child.kill())
   let output = ''
   const outcomes = []
   child.stdout.on('data', data => { output += data })
   child.stderr.on('data', data => { output += data })
-  child.on('message', message => outcomes.push(message.status))
+  child.on('message', message => { if (message.type === 'tennis-result') outcomes.push(message.status) })
   const watchdog = setTimeout(() => child.kill('SIGKILL'), 20000)
   const [code] = await once(child, 'exit')
   clearTimeout(watchdog)
-  return { ...observed, outcomes, code, output, ics: existsSync(join(root, 'event.ics')) ? readFileSync(join(root, 'event.ics'), 'utf8') : '' }
+  return { ...observed, searchStart, outcomes, code, output, ics: existsSync(join(root, 'event.ics')) ? readFileSync(join(root, 'event.ics'), 'utf8') : '' }
 }
 
 test('available padel stops before the tennis fallback and produces a padel ICS', async t => {
@@ -132,4 +136,36 @@ test('an uncertain padel confirmation never falls back or aborts the submitted b
   assert.deepEqual(result.submissions, ['padel'])
   assert.deepEqual(result.outcomes, ['submitted'])
   assert.equal(result.aborts, 0)
+})
+
+
+test('polling waits for delayed result rendering and finds padel on a later attempt', async t => {
+  const result = await runFixture(t, { polling: { intervalSeconds: 2, durationSeconds: 8 }, padelAfter: 1, renderDelay: 250, dryRun: true })
+  assert.equal(result.code, 0, result.output)
+  assert.deepEqual(result.searches, ['padel', 'padel'])
+  assert.deepEqual(result.holds, ['padel'])
+  assert.deepEqual(result.outcomes, ['dry-run-cancelled'])
+  assert.ok(result.searchTimes[1] - result.searchTimes[0] >= 1800)
+})
+test('primary polling expires before a single tennis fallback sweep', async t => {
+  const result = await runFixture(t, { polling: { intervalSeconds: 2, durationSeconds: 4 }, padel: false, dryRun: true })
+  assert.equal(result.code, 0, result.output)
+  assert.equal(result.searches.filter(value => value === 'tennis').length, 1)
+  assert.ok(result.searches.slice(0, -1).every(value => value === 'padel'))
+  assert.ok(result.searchTimes.at(-1) >= result.searchStart + 4000)
+  assert.match(result.output, /Search window expired/)
+  assert.deepEqual(result.outcomes, ['dry-run-cancelled'])
+})
+test('warmup logs in before opening and starts no search before the opening instant', async t => {
+  const result = await runFixture(t, { startDelay: 2000, dryRun: true })
+  assert.equal(result.code, 0, result.output)
+  assert.ok(result.loginAt < result.searchStart)
+  assert.ok(result.searchTimes[0] >= result.searchStart)
+})
+test('a slow search finishes before another request starts', async t => {
+  const result = await runFixture(t, { polling: { intervalSeconds: 2, durationSeconds: 10 }, padelAfter: 1, searchDelay: 2200, dryRun: true })
+  assert.equal(result.code, 0, result.output)
+  assert.deepEqual(result.searches, ['padel', 'padel'])
+  assert.ok(result.searchTimes[1] - result.searchTimes[0] >= 2200)
+  assert.deepEqual(result.outcomes, ['dry-run-cancelled'])
 })

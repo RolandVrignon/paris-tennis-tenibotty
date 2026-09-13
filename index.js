@@ -12,12 +12,15 @@ import { bookingJobOptions } from './lib/booking-job.js'
 import { acquireOperationLock } from './lib/operation-lock.js'
 import { selectClubCourts } from './lib/sport.js'
 import { getBookingTargets } from './lib/booking-request.js'
-import { selectBookingDate, readPriceDescription } from './lib/booking-page.js'
+import { normalizePolling, parseSearchStart, searchAttempts } from './lib/search-window.js'
+import { selectBookingDate, readPriceDescription, submitBookingSearch, setSearchTimeout } from './lib/booking-page.js'
 
 dayjs.extend(customParseFormat)
 
 const bookTennis = async () => {
   const targets = getBookingTargets(config)
+  const polling = normalizePolling(config.polling)
+  const searchStart = parseSearchStart(process.env.TENNIS_SEARCH_START_AT)
   const DRY_RUN_MODE = process.argv.includes('--dry-run')
   const HEADED_MODE = process.argv.includes('--headed')
   const DEBUG_MODE = process.argv.includes('--debug')
@@ -49,6 +52,14 @@ const bookTennis = async () => {
     })
   }
   let canAbortBooking = false
+  let finished = false
+  let windowExpired = false
+  const reportWindowExpired = () => {
+    if (windowExpired) return
+    windowExpired = true
+    console.log(`${dayjs().format()} - Search window expired; review opening time and availability using the search log`)
+    if (process.send && process.connected) process.send({ type: 'tennis-search-expired' })
+  }
   page.setDefaultTimeout(90000)
   try {
     await page.goto('https://tennis.paris.fr/tennis/jsp/site/Portal.jsp?page=tennis&view=start&full=1')
@@ -63,32 +74,44 @@ const bookTennis = async () => {
 
     console.log(`${dayjs().format()} - User connected`)
 
+    console.log(`${dayjs().format()} - Connected; search starts at ${new Date(searchStart).toISOString()}${polling ? `, interval ${polling.intervalSeconds}s, window ${polling.durationSeconds}s` : ''}`)
     locationsLoop:
-    for (const [i, target] of targets.entries()) {
+    for await (const { target, attempt, deadline, finalFallback } of searchAttempts(targets, polling, searchStart)) {
+      if (finalFallback) reportWindowExpired()
       const { sport, location: requestedLocation, courtNumbers, hours, courtType: courtTypes, priority } = target
       let location = requestedLocation
-      const logLocation = process.env.GITHUB_ACTIONS ? `location ${i + 1}` : location
-      console.log(`${dayjs().format()} - Search ${sport} at ${logLocation} (priority ${priority + 1})`)
-      await page.goto('https://tennis.paris.fr/tennis/jsp/site/Portal.jsp?page=recherche&view=recherche_creneau#!')
-      debugLog(`search-page-loaded location=${JSON.stringify(logLocation)} title=${JSON.stringify(await page.title())}`)
-
-      // select tennis location
-      await waitForStep(page, '.tokens-input-text', captchaOptions)
-      const catalog = parseClubCatalog(await page.content())
-      location = resolveClub(catalog, requestedLocation).name
-      const allowedCourtIds = selectClubCourts(catalog, location, { sport, courtNumbers })
-      await page.locator('.tokens-input-text').pressSequentially(`${location} `)
-      const suggestion = page.locator('.tokens-suggestions-list-element').getByText(location, { exact: true })
-      await suggestion.click()
-
-      // select date
+      const logLocation = process.env.GITHUB_ACTIONS ? `priority ${priority + 1}` : location
+      console.log(`${dayjs().format()} - Search ${sport} at ${logLocation} (priority ${priority + 1}, attempt ${attempt})`)
+      let allowedCourtIds
       const date = config.date ? dayjs(config.date, 'D/MM/YYYY') : dayjs().add(6, 'days')
-      await selectBookingDate(page, date.format('DD/MM/YYYY'))
-
-      await page.click('#rechercher')
-
-      // wait until the results page is fully loaded before continue
-      await page.waitForLoadState('domcontentloaded')
+      const remaining = () => deadline ? Math.max(1, deadline - Date.now()) : 90000
+      page.setDefaultTimeout(Math.min(90000, remaining()))
+      try {
+        await page.goto('https://tennis.paris.fr/tennis/jsp/site/Portal.jsp?page=recherche&view=recherche_creneau#!')
+        debugLog(`search-page-loaded location=${JSON.stringify(logLocation)} title=${JSON.stringify(await page.title())}`)
+        await waitForStep(page, '.tokens-input-text', { ...captchaOptions, timeoutMs: Math.min(HEADED_MODE ? 300000 : 90000, remaining()) })
+        const catalog = parseClubCatalog(await page.content())
+        location = resolveClub(catalog, requestedLocation).name
+        allowedCourtIds = selectClubCourts(catalog, location, { sport, courtNumbers })
+        setSearchTimeout(page, deadline)
+        await page.locator('.tokens-input-text').pressSequentially(`${location} `)
+        setSearchTimeout(page, deadline)
+        await page.locator('.tokens-suggestions-list-element').getByText(location, { exact: true }).click()
+        if (!(await selectBookingDate(page, date.format('DD/MM/YYYY'), { allowUnavailable: !!polling, deadline }))) {
+          console.log(`${dayjs().format()} - Requested date not yet selectable for ${logLocation}`)
+          continue
+        }
+        page.setDefaultTimeout(Math.min(90000, remaining()))
+        await submitBookingSearch(page, { deadline })
+      } catch (error) {
+        if (deadline && Date.now() >= deadline && error.name === 'TimeoutError') {
+          debugLog('search-deadline-reached during loading')
+          continue
+        }
+        throw error
+      }
+      if (deadline && Date.now() >= deadline) continue
+      debugLog(`search-results-ready attempt=${attempt} slots=${await page.locator('[courtid][datedeb]').count()}`)
 
       let selectedHour
       hoursLoop:
@@ -109,6 +132,7 @@ const bookTennis = async () => {
             if (!config.priceType.includes(priceType) || !courtTypes.includes(courtType)) {
               continue
             }
+            if (deadline && Date.now() >= deadline) break hoursLoop
             selectedHour = hour
             debugLog(`slot-selected location=${JSON.stringify(logLocation)} date=${date.format('YYYY-MM-DD')} hour=${hour} courtId=${JSON.stringify(courtId)} priceType=${JSON.stringify(priceType)} courtType=${JSON.stringify(courtType)}`)
             await page.click(bookSlotButton)
@@ -125,6 +149,7 @@ const bookTennis = async () => {
         continue
       }
 
+      page.setDefaultTimeout(90000)
       await waitForStep(page, '.order-steps-infos h2 >> text="1 / 3 - Validation du court"', captchaOptions)
 
       for (const [i, player] of config.players.entries()) {
@@ -174,6 +199,7 @@ const bookTennis = async () => {
         if (!cancelResponse.ok()) throw new Error('Dry-run cancellation failed')
         canAbortBooking = false
         debugLog(`dry-run-cancelled status=${cancelResponse.status()}`)
+        finished = true
         reportBookingResult('dry-run-cancelled')
 
         break locationsLoop
@@ -198,6 +224,7 @@ const bookTennis = async () => {
 
       await page.waitForSelector('.confirmReservation')
       debugLog('reservation-confirmation-visible')
+      finished = true
       reportBookingResult('confirmed')
 
       // Extract reservation details
@@ -249,6 +276,7 @@ const bookTennis = async () => {
 
       break
     }
+    if (polling && !finished) reportWindowExpired()
   } catch (e) {
     console.log(e)
     process.exitCode = 1
