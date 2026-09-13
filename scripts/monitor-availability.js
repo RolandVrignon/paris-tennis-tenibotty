@@ -2,7 +2,7 @@
 import { mkdirSync, appendFileSync, writeFileSync, existsSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { loadAccountConfig } from '../lib/config.js'
+import { loadMonitoringConfig } from '../lib/config.js'
 import { withSitePage } from '../lib/site-session.js'
 import { acquireOperationLock } from '../lib/operation-lock.js'
 import { bookingJobOptions } from '../lib/booking-job.js'
@@ -28,8 +28,10 @@ let options
 console.log = (...values) => console.error(...values)
 try {
   options = validateMonitorOptions({ date: argument('--date'), club: argument('--club'), sport: argument('--sport', 'padel'), start: argument('--start'), end: argument('--end'), intervalSeconds: Number(argument('--interval-seconds', '2')) })
+  const config = loadMonitoringConfig()
+  const accountRole = config.dedicated ? 'monitoring' : 'booking'
   if (args.includes('--check')) {
-    process.stdout.write(`${JSON.stringify(options, null, 2)}\nRead-only monitor configuration valid. No browser started.\n`)
+    process.stdout.write(`${JSON.stringify(options, null, 2)}\nRead-only monitor configuration valid (account: ${accountRole}). No browser started.\n`)
   } else {
     if (Date.now() >= Date.parse(options.end)) throw new Error('Observation window already ended; refusing replay')
     if (Date.parse(options.start) - Date.now() > 600000) throw new Error('Monitor started more than ten minutes early')
@@ -41,15 +43,15 @@ try {
     reportFile = join(output, `${id}.report.json`)
     if (existsSync(reportFile) || existsSync(logFile)) throw new Error('Monitor output already exists; refusing to overwrite evidence')
     writeFileSync(logFile, '', { mode: 0o600, flag: 'wx' })
-    const config = loadAccountConfig()
     const summary = await withSitePage(async page => {
       await guardMonitorPage(page)
       return monitorWindow(options, () => observeAvailability(page, options, { ai: config.ai }), observation => {
         appendFileSync(logFile, `${JSON.stringify(observation)}\n`, { mode: 0o600 })
       })
     }, { authenticate: true, config })
-    writeFileSync(reportFile, `${JSON.stringify({ options, ...summary }, null, 2)}\n`, { mode: 0o600, flag: 'wx' })
+    writeFileSync(reportFile, `${JSON.stringify({ options, accountRole, ...summary }, null, 2)}\n`, { mode: 0o600, flag: 'wx' })
     const lines = [
+      `Compte utilisé : ${accountRole}.`,
       `Observation ${options.club} pour le ${options.date} (Europe/Paris).`,
       `Premiers créneaux affichés : ${parisTime(summary.firstVisibleAt)}.`,
       `Premiers créneaux accessibles au compte : ${parisTime(summary.firstBookableAt)}.`,

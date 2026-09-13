@@ -16,16 +16,23 @@ const catalog = { features: Object.entries(names).map(([sport, name], i) => ({ p
 } })) }
 
 // Exercise the real entry point against a local site, with no account or network service.
-const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brokenHold = false, uncertainSubmit = false, padelPrice = 'Gratuité', polling, padelAfter = 0, searchDelay = 0, renderDelay = 0, startDelay = 0 } = {}) => {
+const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brokenHold = false, uncertainSubmit = false, padelPrice = 'Gratuité', polling, padelAfter = 0, searchDelay = 0, renderDelay = 0, startDelay = 0, dualAccount = false, bookingPadel = true } = {}) => {
   const root = mkdtempSync(join(tmpdir(), 'tennis-browser-fallback-'))
-  const observed = { searches: [], holds: [], submissions: [], aborts: 0, searchTimes: [], loginAt: null }
+  const observed = { searches: [], holds: [], submissions: [], aborts: 0, searchTimes: [], loginAt: null, logins: [], loginCookies: [], searchAccounts: [], holdAccounts: [], submissionAccounts: [] }
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://fixture')
     const sport = url.searchParams.get('sport') || 'padel'
+    const account = req.headers.cookie?.includes('account=monitoring') ? 'monitoring' : 'booking'
     let html = ''
     if (url.pathname.endsWith('abortBooking')) { observed.aborts++; res.end('ok'); return }
-    if (url.pathname === '/login') { observed.loginAt = Date.now(); html = '<div class="main-informations">Connected</div>' }
-    else if (url.searchParams.get('view') === 'start') html = '<button id="button_suivi_inscription">Login</button><form id="form-login" action="/login"><input id="username"><input id="password"><button>Connect</button></form>'
+    if (url.pathname === '/login') {
+      const loggedIn = url.searchParams.get('username') === 'monitor@example.invalid' ? 'monitoring' : 'booking'
+      observed.logins.push(loggedIn)
+      observed.loginCookies.push(req.headers.cookie || '')
+      res.setHeader('Set-Cookie', `account=${loggedIn}; Path=/; HttpOnly`)
+      observed.loginAt = Date.now(); html = '<div class="main-informations">Connected</div>'
+    }
+    else if (url.searchParams.get('view') === 'start') html = '<button id="button_suivi_inscription">Login</button><form id="form-login" action="/login"><input id="username" name="username"><input id="password"><button>Connect</button></form>'
     else if (url.searchParams.get('page') === 'recherche') html = `<script>var tennis = ${JSON.stringify(catalog)};</script>
       <form action="/results"><input class="tokens-input-text"><input type="hidden" name="sport" id="sport">
       <div class="tokens-suggestions-list-element">${Object.entries(names).map(([kind, name]) => `<button type="button" onclick="document.querySelector('#sport').value='${kind}'">${name}</button>`).join('')}</div>
@@ -34,12 +41,13 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
       <button id="rechercher">Search</button></form>`
     else if (url.pathname === '/results') {
       observed.searches.push(sport)
+      observed.searchAccounts.push(account)
       observed.searchTimes.push(Date.now())
-      html = (sport === 'padel' ? padel && observed.searches.filter(value => value === 'padel').length > padelAfter : tennis)
-        ? `<div class="row tennis-court"><div class="price-description">${sport === 'padel' ? padelPrice : 'Gratuité'}<br>Couvert</div><a courtid="${ids[sport]}" datedeb="2026/09/21 20:00:00" href="/hold?sport=${sport}">Book</a></div>`
+      html = (sport === 'padel' ? padel && (account !== 'booking' || bookingPadel) && observed.searches.filter(value => value === 'padel').length > padelAfter : tennis)
+        ? `<div class="row tennis-court"><div class="price-description">${account === 'monitoring' ? 'Tarif plein' : sport === 'padel' ? padelPrice : 'Gratuité'}<br>Couvert</div><a courtid="${ids[sport]}" datedeb="2026/09/21 20:00:00" href="/hold?sport=${sport}">Book</a></div>`
         : '<div class="no-result">No slots</div>'
     } else if (url.pathname === '/hold' || url.pathname === '/partners') {
-      if (url.pathname === '/hold') observed.holds.push(sport)
+      if (url.pathname === '/hold') { observed.holds.push(sport); observed.holdAccounts.push(account) }
       html = brokenHold ? '<div>Hold failed</div>' : `<div class="order-steps-infos"><h2>1 / 3 - Validation du court</h2></div>
         <form action="/payment"><input type="hidden" name="sport" value="${sport}"><input name="player1"><input name="player1"><button>Continue</button></form>
         <button id="btnCancelBooking" onclick="fetch('/tennis/rest/abortBooking',{method:'POST'})">Cancel</button>`
@@ -48,6 +56,7 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
       <a id="previous" href="/partners?sport=${sport}">Previous</a><div class="step-two"><a id="submit" href="/confirm?sport=${sport}">Confirm</a></div>`
     else if (url.pathname === '/confirm') {
       observed.submissions.push(sport)
+      observed.submissionAccounts.push(account)
       html = uncertainSubmit ? '<div>No confirmation received</div>' : `<div class="confirmReservation">Confirmed</div><div class="address">${names[sport]}</div><div class="date">21/09/2026 à 20h</div><div class="court">${sport} 1</div>`
     }
     if (url.pathname === '/results' && renderDelay) html = `<div id="loadingComponent">Loading</div><script>setTimeout(() => { document.body.innerHTML = ${JSON.stringify(html)} }, ${renderDelay})</script>`
@@ -69,7 +78,7 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
   symlinkSync(resolve('node_modules'), join(root, 'node_modules'))
   const configPath = join(root, 'config.json')
   writeFileSync(configPath, JSON.stringify({
-    account: { email: 'fixture@example.invalid', password: 'fixture' }, ai: { enable: false }, ntfy: { enable: false },
+    account: { email: 'fixture@example.invalid', password: 'fixture' }, monitoringAccount: dualAccount ? { email: 'monitor@example.invalid', password: 'monitor-fixture' } : undefined, ai: { enable: false }, ntfy: { enable: false },
     sport: 'padel', date: '21/09/2026', locations: [names.padel], hours: ['20'], courtType: ['Couvert'], priceType: ['Gratuité'],
     players: [{ firstName: 'Test', lastName: 'Partner' }], polling, fallbacks: [{ sport: 'tennis', locations: [names.tennis] }],
   }))
@@ -168,4 +177,47 @@ test('a slow search finishes before another request starts', async t => {
   assert.deepEqual(result.searches, ['padel', 'padel'])
   assert.ok(result.searchTimes[1] - result.searchTimes[0] >= 2200)
   assert.deepEqual(result.outcomes, ['dry-run-cancelled'])
+})
+
+
+test('dedicated monitoring switches to an isolated booking session and rechecks the booking tariff', async t => {
+  const result = await runFixture(t, { dualAccount: true })
+  assert.equal(result.code, 0, result.output)
+  assert.deepEqual(result.logins, ['monitoring', 'booking'])
+  assert.deepEqual(result.loginCookies, ['', ''])
+  assert.deepEqual(result.searchAccounts, ['monitoring', 'booking'])
+  assert.deepEqual(result.holdAccounts, ['booking'])
+  assert.deepEqual(result.submissionAccounts, ['booking'])
+  assert.deepEqual(result.outcomes, ['submitted', 'confirmed'])
+})
+test('dual-account dry-run holds and cancels only with the booking account', async t => {
+  const result = await runFixture(t, { dualAccount: true, dryRun: true })
+  assert.equal(result.code, 0, result.output)
+  assert.deepEqual(result.holdAccounts, ['booking'])
+  assert.deepEqual(result.submissions, [])
+  assert.equal(result.aborts, 1)
+  assert.deepEqual(result.outcomes, ['dry-run-cancelled'])
+})
+test('a disappeared padel slot is rechecked without holding it and tennis keeps account separation', async t => {
+  const result = await runFixture(t, { dualAccount: true, bookingPadel: false, dryRun: true })
+  assert.equal(result.code, 0, result.output)
+  assert.deepEqual(result.searches, ['padel', 'padel', 'tennis', 'tennis'])
+  assert.deepEqual(result.searchAccounts, ['monitoring', 'booking', 'monitoring', 'booking'])
+  assert.deepEqual(result.holds, ['tennis'])
+  assert.deepEqual(result.holdAccounts, ['booking'])
+  assert.deepEqual(result.loginCookies, ['', '', '', ''])
+})
+test('unavailable monitored courts never cause a login with the booking account', async t => {
+  const result = await runFixture(t, { dualAccount: true, padel: false, tennis: false })
+  assert.equal(result.code, 0, result.output)
+  assert.deepEqual(result.logins, ['monitoring'])
+  assert.deepEqual(result.holds, [])
+})
+test('a tariff mismatch resumes monitoring without repeated booking logins on every poll', async t => {
+  const result = await runFixture(t, { dualAccount: true, padelPrice: 'Tarif plein', tennis: false, polling: { intervalSeconds: 2, durationSeconds: 6 } })
+  assert.equal(result.code, 0, result.output)
+  assert.deepEqual(result.logins, ['monitoring', 'booking', 'monitoring'])
+  assert.equal(result.searchAccounts.filter(account => account === 'booking').length, 1)
+  assert.deepEqual(result.holds, [])
+  assert.deepEqual(result.outcomes, [])
 })

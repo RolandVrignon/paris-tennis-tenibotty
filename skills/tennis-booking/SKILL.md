@@ -137,3 +137,12 @@ Keep fixed configuration private; no secrets in cron prompts or names. Do not al
 When asked to measure when a club opens availability, use `scripts/monitor-availability.js`, not the booking runner or a dry-run that holds a court. Required flags: `--club`, `--date`, `--start` and `--end` (timestamps with timezone); optional `--sport padel`, `--interval-seconds 2`, `--output-dir`, `--check`. It observes every hour for the specified club and sport. It never selects a slot, continues through the bounded window, and stops on three consecutive errors.
 
 Schedule one no-agent Hermes job running a shell wrapper in `{{PROJECT_DIR}}`, with an explicit delivery destination verified from the existing chat route. Ensure the Hermes script timeout exceeds the monitoring window plus a margin. Preserve other booking jobs. Read the JSONL observations and JSON report: distinguish first visible slots, first account-bookable slots, a preceding empty sample, errors, and availability already present at the first successful sample. Report the measured interval, not an exact server opening time or an assumed J+6 rule. Do not modify booking schedules from one sample without a user request.
+
+
+## Optional monitoring account
+
+The fixed configuration may contain `monitoringAccount` with `email` and `password`. Never print these values. Absent or entirely empty means use the existing main `account`, per the user's preference. A complete block automatically supplies standalone monitoring and the reservation runner's availability searches; partial credentials or authentication failure must not silently fall back to the main account.
+
+Keep this block out of staging requests, cron prompts and variable preferences. Tell the user to fill it in the VPS fixed configuration before the cron starts. The runner closes the monitoring browser context when availability is detected, logs into a fresh context as the booking account, and rechecks availability and that account's tariff before selecting a slot. Different tariff labels on the monitoring account are expected. If revalidation finds no compatible slot, monitoring resumes with a thirty-second per-slot cooldown before another booking-account login. Never claim the account switch prevents bot detection or guarantees that an observed slot remains available.
+
+Standalone monitoring reports `accountRole` as `monitoring` or `booking`; reservation listing and cancellation always use the main account. If the optional block is still empty, explicitly state that the scheduled monitor will continue using the main account.

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { loadConfig, mergeConfig } from '../lib/config.js'
+import { loadConfig, mergeConfig, loadMonitoringConfig } from '../lib/config.js'
 
 const temporaryDirectory = (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'par-ici-tennis-config-test-'))
@@ -59,4 +59,31 @@ test('mergeConfig ignores attempts to override fixed fields', () => {
     account: { password: 'secret' },
     hours: ['18'],
   })
+})
+
+
+test('monitoring account is optional but partial credentials never silently change identity', () => {
+  const bookingConfig = { account: { email: 'booking@example.test', password: 'booking-secret' }, ai: { enable: false } }
+  for (const monitoringAccount of [undefined, null, {}, { email: '', password: '' }]) {
+    const result = loadMonitoringConfig({ bookingConfig: { ...bookingConfig, monitoringAccount } })
+    assert.equal(result.dedicated, false)
+    assert.deepEqual(result.account, bookingConfig.account)
+  }
+  const dedicated = loadMonitoringConfig({ bookingConfig: { ...bookingConfig, monitoringAccount: { email: 'monitor@example.test', password: 'monitor-secret' } } })
+  assert.equal(dedicated.dedicated, true)
+  assert.equal(dedicated.account.email, 'monitor@example.test')
+  assert.deepEqual(dedicated.ai, bookingConfig.ai)
+  for (const monitoringAccount of [{ email: 'monitor@example.test' }, { password: 'secret' }, { email: 'BOOKING@example.test', password: 'secret' }]) assert.throws(() => loadMonitoringConfig({ bookingConfig: { ...bookingConfig, monitoringAccount } }))
+})
+test('monitoring credentials remain fixed and cannot be supplied by a variable booking request', () => {
+  const monitoringAccount = { email: 'monitor@example.test', password: 'fixed' }
+  const result = mergeConfig({ monitoringAccount }, { monitoringAccount: { email: 'wrong@example.test', password: 'wrong' } })
+  assert.deepEqual(result.monitoringAccount, monitoringAccount)
+})
+test('standalone monitoring selects the optional account from the fixed file', t => {
+  const rootDirectory = temporaryDirectory(t)
+  writeJson(join(rootDirectory, 'config.fixed.json'), { account: { email: 'booking@example.test', password: 'base' }, monitoringAccount: { email: 'monitor@example.test', password: 'dedicated' } })
+  const result = loadMonitoringConfig({ rootDirectory, env: {} })
+  assert.equal(result.account.email, 'monitor@example.test')
+  assert.equal(result.dedicated, true)
 })

@@ -618,3 +618,16 @@ Elle utilise uniquement le compte fixe et le verrou partagé avec les opération
 Pour Hermes, programmer un seul cron `--no-agent` qui exécute un wrapper shell depuis le repo et délivre stdout dans le chat souhaité. Le wrapper doit appeler cette commande de monitoring, jamais le script de réservation. Prévoir `cron.script_timeout_seconds` supérieur à la durée de la fenêtre, avec une marge pour la connexion et le rapport. Le résumé final indique la première apparition, le dernier relevé vide, les erreurs et les chemins des preuves. Une erreur de connexion ou trois erreurs successives produisent un échec explicite.
 
 Une transition vide → créneaux permet d’encadrer l’apparition observée, pas de certifier l’heure exacte du serveur. Un relevé positif initial signifie seulement « déjà disponible à cet instant ». Conserver séparément les slots affichés et les boutons accessibles au compte ; les droits du compte peuvent limiter la seconde catégorie. La règle de programmation n’est jamais modifiée automatiquement d’après une seule observation.
+
+
+## Séparer le compte de monitoring du compte de réservation
+
+`config.fixed.json` accepte le bloc optionnel `monitoringAccount: { "email": "...", "password": "..." }`. L’exemple versionné contient un bloc vide. Le compte principal reste dans `account` : il sert aux réservations, à leur consultation et à leur annulation. Les paramètres variables, les requêtes Hermes et les replis ne peuvent pas remplacer ces identifiants.
+
+Si `monitoringAccount` est absent, nul ou entièrement vide, tous les parcours conservent le compte principal. S’il est renseigné, les deux valeurs sont obligatoires et l’adresse doit différer de celle du compte principal. Une configuration partielle ou un échec d’authentification du compte configuré arrête l’opération ; il n’y a pas de bascule silencieuse vers les identifiants principaux.
+
+Au lancement programmé, le navigateur se connecte au compte de monitoring et attend l’ouverture prévue. Les recherches répétées et les détections de replis restent sur ce compte. Une disponibilité aux heures, pistes et types de terrain demandés déclenche la fermeture de ce contexte navigateur, puis une connexion dans un contexte neuf avec le compte principal. Le script refait la recherche et vérifie le tarif du principal avant de sélectionner un créneau. Aucune donnée de formulaire ni aucun cookie de monitoring n’est réutilisé pour réserver.
+
+Si la seconde recherche ne trouve plus de créneau compatible, le script revient au compte de monitoring. Un délai de trente secondes par créneau évite de reconnecter le principal à chaque relevé identique ; la limite initiale de recherche reste applicable. Après sélection, une erreur de checkout arrête la tâche comme auparavant. Les tests dry-run utilisent également le principal pour la sélection et l’annulation temporaire.
+
+`availability:monitor` choisit automatiquement le second compte lorsqu’il existe et n’effectue jamais de bascule pour réserver. `--check` annonce le rôle choisi ; le rapport conserve `accountRole` sans adresse ni mot de passe. Les fichiers fixes sont lus au lancement : compléter le bloc sur le VPS avant le démarrage du cron. Il est aussi accepté dans le fichier historique `config.json`.

@@ -8,6 +8,7 @@ import dayjs from 'dayjs'
 import { buildBookingConfig, normalizeBookingRequest, getBookingSchedule, describeBookingChoices } from '../lib/booking-request.js'
 import { bookingJobOptions, claimBookingJob, updateBookingJob } from '../lib/booking-job.js'
 import { acquireOperationLock } from '../lib/operation-lock.js'
+import { loadMonitoringConfig } from '../lib/config.js'
 import { classifyBookingResult } from '../lib/booking-result.js'
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -39,6 +40,7 @@ try {
   const request = normalizeBookingRequest(record.request, { allowPastOpening: true })
   const fixed = JSON.parse(readFileSync(options.fixedConfigPath, 'utf8'))
   const fullConfig = buildBookingConfig(fixed, request)
+  loadMonitoringConfig({ bookingConfig: fullConfig, rootDirectory: root })
   // Check configuration without creating a secret file or changing job status.
   if (checkOnly) {
     process.stdout.write('Booking request check passed. No browser was started.\n')

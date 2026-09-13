@@ -6,19 +6,21 @@ import { createEvent } from 'ics'
 import { config } from './staticFiles.js'
 import { notify } from './lib/ntfy.js'
 import { waitForStep } from './lib/captcha.js'
-import { parseClubCatalog, resolveClub } from './lib/clubs.js'
 import { reportBookingResult } from './lib/booking-result.js'
 import { bookingJobOptions } from './lib/booking-job.js'
 import { acquireOperationLock } from './lib/operation-lock.js'
-import { selectClubCourts } from './lib/sport.js'
 import { getBookingTargets } from './lib/booking-request.js'
 import { normalizePolling, parseSearchStart, searchAttempts } from './lib/search-window.js'
-import { selectBookingDate, readPriceDescription, submitBookingSearch, setSearchTimeout } from './lib/booking-page.js'
+import { loadMonitoringConfig } from './lib/config.js'
+import { authenticatePage } from './lib/site-session.js'
+import { guardMonitorPage } from './lib/availability-monitor.js'
+import { searchBookingTarget, clickBookingCandidate } from './lib/booking-search.js'
 
 dayjs.extend(customParseFormat)
 
 const bookTennis = async () => {
   const targets = getBookingTargets(config)
+  const monitoring = loadMonitoringConfig({ bookingConfig: config })
   const polling = normalizePolling(config.polling)
   const searchStart = parseSearchStart(process.env.TENNIS_SEARCH_START_AT)
   const DRY_RUN_MODE = process.argv.includes('--dry-run')
@@ -42,15 +44,24 @@ const bookTennis = async () => {
 
   console.log(`${dayjs().format()} - Browser started`)
   debugLog(`mode=${DRY_RUN_MODE ? 'dry-run' : 'real'} browser=${HEADED_MODE ? 'headed' : 'headless'} captchaAI=${config.ai?.enable === false ? 'disabled' : 'enabled'}`)
-  const page = await browser.newPage()
-  if (DEBUG_MODE) {
-    page.on('pageerror', error => debugLog(`page-error=${JSON.stringify(error.message)}`))
-    page.on('console', message => {
-      if (message.type() === 'error' || message.type() === 'warning') {
-        debugLog(`browser-console type=${message.type()} text=${JSON.stringify(message.text())}`)
-      }
-    })
+  let page
+  let role
+  const openSession = async nextRole => {
+    if (page) await page.close()
+    // browser.newPage creates an isolated context; closing it discards its cookies.
+    page = await browser.newPage()
+    role = nextRole
+    page.setDefaultTimeout(90000)
+    if (role === 'monitoring') await guardMonitorPage(page)
+    if (DEBUG_MODE) page.on('pageerror', error => debugLog(`page-error role=${role} message=${JSON.stringify(error.message)}`))
+    const account = role === 'monitoring' ? monitoring.account : {
+      email: config.account?.email || process.env.ACCOUNT_EMAIL,
+      password: config.account?.password || process.env.ACCOUNT_PASSWORD,
+    }
+    await authenticatePage(page, account, captchaOptions, 'https://tennis.paris.fr/tennis/jsp/site/Portal.jsp?page=tennis&view=start&full=1')
+    console.log(`${dayjs().format()} - User connected (${role} account)`)
   }
+  const retryAfter = new Map()
   let canAbortBooking = false
   let finished = false
   let windowExpired = false
@@ -60,50 +71,24 @@ const bookTennis = async () => {
     console.log(`${dayjs().format()} - Search window expired; review opening time and availability using the search log`)
     if (process.send && process.connected) process.send({ type: 'tennis-search-expired' })
   }
-  page.setDefaultTimeout(90000)
   try {
-    await page.goto('https://tennis.paris.fr/tennis/jsp/site/Portal.jsp?page=tennis&view=start&full=1')
-
-    await page.click('#button_suivi_inscription')
-    await page.fill('#username', config?.account?.email || process.env.ACCOUNT_EMAIL)
-    await page.fill('#password', config?.account?.password || process.env.ACCOUNT_PASSWORD)
-    await page.click('#form-login >> button')
-
-    // wait for login redirection before continue
-    await waitForStep(page, '.main-informations', captchaOptions)
-
-    console.log(`${dayjs().format()} - User connected`)
+    await openSession(monitoring.dedicated ? 'monitoring' : 'booking')
 
     console.log(`${dayjs().format()} - Connected; search starts at ${new Date(searchStart).toISOString()}${polling ? `, interval ${polling.intervalSeconds}s, window ${polling.durationSeconds}s` : ''}`)
     locationsLoop:
     for await (const { target, attempt, deadline, finalFallback } of searchAttempts(targets, polling, searchStart)) {
       if (finalFallback) reportWindowExpired()
-      const { sport, location: requestedLocation, courtNumbers, hours, courtType: courtTypes, priority } = target
-      let location = requestedLocation
-      const logLocation = process.env.GITHUB_ACTIONS ? `priority ${priority + 1}` : location
+      const { sport, location: requestedLocation, priority } = target
+      const logLocation = process.env.GITHUB_ACTIONS ? `priority ${priority + 1}` : requestedLocation
       console.log(`${dayjs().format()} - Search ${sport} at ${logLocation} (priority ${priority + 1}, attempt ${attempt})`)
-      let allowedCourtIds
+      if (monitoring.dedicated && role !== 'monitoring') await openSession('monitoring')
       const date = config.date ? dayjs(config.date, 'D/MM/YYYY') : dayjs().add(6, 'days')
-      const remaining = () => deadline ? Math.max(1, deadline - Date.now()) : 90000
-      page.setDefaultTimeout(Math.min(90000, remaining()))
-      try {
-        await page.goto('https://tennis.paris.fr/tennis/jsp/site/Portal.jsp?page=recherche&view=recherche_creneau#!')
-        debugLog(`search-page-loaded location=${JSON.stringify(logLocation)} title=${JSON.stringify(await page.title())}`)
-        await waitForStep(page, '.tokens-input-text', { ...captchaOptions, timeoutMs: Math.min(HEADED_MODE ? 300000 : 90000, remaining()) })
-        const catalog = parseClubCatalog(await page.content())
-        location = resolveClub(catalog, requestedLocation).name
-        allowedCourtIds = selectClubCourts(catalog, location, { sport, courtNumbers })
-        setSearchTimeout(page, deadline)
-        await page.locator('.tokens-input-text').pressSequentially(`${location} `)
-        setSearchTimeout(page, deadline)
-        await page.locator('.tokens-suggestions-list-element').getByText(location, { exact: true }).click()
-        if (!(await selectBookingDate(page, date.format('DD/MM/YYYY'), { allowUnavailable: !!polling, deadline }))) {
-          console.log(`${dayjs().format()} - Requested date not yet selectable for ${logLocation}`)
-          continue
-        }
-        page.setDefaultTimeout(Math.min(90000, remaining()))
-        await submitBookingSearch(page, { deadline })
-      } catch (error) {
+      const search = (searchDeadline, priceTypes) => searchBookingTarget(page, {
+        target, date, deadline: searchDeadline, polling, priceTypes, captchaOptions, debugLog,
+        searchUrl: 'https://tennis.paris.fr/tennis/jsp/site/Portal.jsp?page=recherche&view=recherche_creneau#!',
+      })
+      let result
+      try { result = await search(deadline, monitoring.dedicated ? undefined : config.priceType) } catch (error) {
         if (deadline && Date.now() >= deadline && error.name === 'TimeoutError') {
           debugLog('search-deadline-reached during loading')
           continue
@@ -111,43 +96,32 @@ const bookTennis = async () => {
         throw error
       }
       if (deadline && Date.now() >= deadline) continue
-      debugLog(`search-results-ready attempt=${attempt} slots=${await page.locator('[courtid][datedeb]').count()}`)
-
-      let selectedHour
-      hoursLoop:
-      for (const hour of hours) {
-        const dateDeb = `[datedeb="${date.format('YYYY/MM/DD')} ${hour}:00:00"]`
-        if (await page.locator(dateDeb).count()) {
-          if (await page.isHidden(dateDeb)) {
-            await page.click(`#head${location.replaceAll(' ', '')}${hour}h .panel-title`)
-          }
-
-          const slots = await page.locator(dateDeb).all()
-          for (const slot of slots) {
-            const courtId = await slot.getAttribute('courtid')
-            const bookSlotButton = `[courtid="${courtId}"]${dateDeb}`
-            if (!allowedCourtIds.has(courtId)) continue
-
-            const { priceType, courtType } = await readPriceDescription(page.locator(`.row.tennis-court:has(${bookSlotButton})`).locator('.price-description'))
-            if (!config.priceType.includes(priceType) || !courtTypes.includes(courtType)) {
-              continue
-            }
-            if (deadline && Date.now() >= deadline) break hoursLoop
-            selectedHour = hour
-            debugLog(`slot-selected location=${JSON.stringify(logLocation)} date=${date.format('YYYY-MM-DD')} hour=${hour} courtId=${JSON.stringify(courtId)} priceType=${JSON.stringify(priceType)} courtType=${JSON.stringify(courtType)}`)
-            await page.click(bookSlotButton)
-            canAbortBooking = true
-            debugLog(`slot-clicked title=${JSON.stringify(await page.title())}`)
-
-            break hoursLoop
-          }
-        }
+      if (!result.dateSelectable) {
+        console.log(`${dayjs().format()} - Requested date not yet selectable for ${logLocation}`)
+        continue
       }
-
-      if (!selectedHour) {
+      let candidate = result.candidates.find(item => !monitoring.dedicated || (retryAfter.get(item.key) || 0) <= Date.now())
+      if (!candidate) {
         console.log(`${dayjs().format()} - Failed to find reservation for ${logLocation}`)
         continue
       }
+      if (monitoring.dedicated) {
+        const detected = result.candidates
+        console.log(`${dayjs().format()} - Availability detected by monitoring account; opening a fresh booking session`)
+        await openSession('booking')
+        // Availability and account-specific tariff must be checked again; never reuse a monitoring form.
+        result = await search(undefined, config.priceType)
+        candidate = result.candidates[0]
+        if (!candidate) {
+          for (const item of detected) retryAfter.set(item.key, Date.now() + 30000)
+          console.log(`${dayjs().format()} - No compatible slot for booking account; resume monitoring (30s before retrying these slots)`)
+          continue
+        }
+      }
+      const selectedHour = candidate.hour
+      debugLog(`slot-selected role=${role} date=${date.format('YYYY-MM-DD')} hour=${candidate.hour} courtId=${candidate.courtId} priceType=${candidate.priceType}`)
+      await clickBookingCandidate(page, result.location, candidate)
+      canAbortBooking = true
 
       page.setDefaultTimeout(90000)
       await waitForStep(page, '.order-steps-infos h2 >> text="1 / 3 - Validation du court"', captchaOptions)
@@ -280,7 +254,7 @@ const bookTennis = async () => {
   } catch (e) {
     console.log(e)
     process.exitCode = 1
-    if (!page.isClosed()) {
+    if (page && !page.isClosed()) {
       mkdirSync('img', { recursive: true })
       const screenshot = await page.screenshot({ path: 'img/failure.png' })
       debugLog(`failure-screenshot=img/failure.png title=${JSON.stringify(await page.title())}`)

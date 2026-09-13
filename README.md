@@ -229,6 +229,25 @@ Le journal conserve les heures des tentatives et les résultats. L’expiration 
 
 Sans `polling`, le parcours reste un seul passage. `fallbackMode: "each-cycle"` permet, si demandé, de vérifier tous les choix à chaque cycle. En lancement direct, la fenêtre commence au démarrage ; pour Hermes, sa fin reste fixée à l’ouverture prévue + dix minutes maximum, même si le lancement est retardé.
 
+## Compte de monitoring optionnel
+
+Dans `config.fixed.json`, le bloc `account` reste le compte qui réserve. Ajouter un second bloc pour les observations :
+
+```json
+"monitoringAccount": {
+  "email": "adresse-du-compte-de-monitoring",
+  "password": "mot-de-passe-du-compte-de-monitoring"
+}
+```
+
+- Bloc absent ou entièrement vide : le compte principal est utilisé, comme auparavant.
+- Bloc complet : le monitoring et les recherches répétées utilisent le second compte. À la détection d’un créneau compatible, sa session navigateur est fermée ; une session distincte se connecte au compte principal et refait la recherche avant toute sélection.
+- Bloc incomplet ou connexion refusée : une erreur est signalée ; le script ne remplace pas discrètement le compte configuré par le principal.
+
+La Gratuité et les autres tarifs sont vérifiés avec le compte qui réserve, car les droits des deux comptes peuvent différer. Si le créneau a disparu ou n’est pas compatible avec le compte principal, les recherches reprennent avec le compte de monitoring ; ces mêmes créneaux ne déclenchent pas une nouvelle connexion au principal avant trente secondes. Les replis padel → tennis et le dry-run conservent cette séparation.
+
+Le monitoring autonome de Jules Ladoumègue utilise aussi ce bloc. Son rapport indique `monitoring` ou `booking` pour préciser le compte employé, sans exposer ses identifiants. Les commandes de liste et d’annulation des réservations utilisent toujours `account`. Le bloc fonctionne aussi dans l’ancien `config.json` ; ne jamais commiter ces fichiers privés.
+
 ## Mesurer l’heure d’apparition des créneaux
 
 `availability:monitor` observe un club et une date **sans sélectionner de créneau**. Il relève toutes les heures et pistes du sport demandé, conserve les résultats horodatés dans `logs/monitoring/`, puis produit un rapport JSON et un résumé pour Hermes.

@@ -3,6 +3,10 @@
     "email": "user.name@host.com",
     "password": "YOUR_PASSWORD"
   },
+  "monitoringAccount": {
+    "email": "",
+    "password": ""
+  },
   "priceType": [
     "Gratuité"
   ],
