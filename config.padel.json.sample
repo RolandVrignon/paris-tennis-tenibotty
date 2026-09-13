@@ -1,0 +1,13 @@
+{
+  "sport": "padel",
+  "locations": {
+    "Padel Jules Ladoumègue": [1, 2, 3, 4]
+  },
+  "hours": ["18", "19"],
+  "courtType": ["Couvert"],
+  "players": [
+    { "firstName": "PRENOM_PARTENAIRE_1", "lastName": "NOM_PARTENAIRE_1" },
+    { "firstName": "PRENOM_PARTENAIRE_2", "lastName": "NOM_PARTENAIRE_2" },
+    { "firstName": "PRENOM_PARTENAIRE_3", "lastName": "NOM_PARTENAIRE_3" }
+  ]
+}

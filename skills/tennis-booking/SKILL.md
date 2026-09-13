@@ -1,6 +1,6 @@
 ---
 name: tennis-booking
-description: Find official Paris Tennis clubs, inspect or cancel account reservations, and manage one-time booking requests from Hermes or Telegram using the repository CLI.
+description: Find official Paris Tennis clubs, inspect or cancel account reservations, and manage one-time tennis or padel booking requests from Hermes or Telegram using the repository CLI.
 ---
 
 # Paris Tennis
@@ -17,6 +17,12 @@ node '{{PROJECT_DIR}}/scripts/tennis.js' clubs list --arrondissement 18
 ```
 
 Use the returned official `name` and `id`, address and arrondissement. A unique exact match ignores accents and case. A unique partial name can be presented in the booking summary. If there are different possible names, ask which one. Fuzzy `suggestions` are never a selection: ask the user to choose. Some facilities share an official search name; show their addresses when relevant. Do not invent a club or arrondissement. The helper revalidates clubs before preparing and the booking script rechecks the current search page.
+
+## Municipal padel
+
+For padel on Paris Tennis, set `sport` to `padel` and resolve `Padel Jules Ladoumègue` through the club command. This is separate from external padel providers. The club is in the 19th arrondissement; its four padel tracks coexist in the catalogue with old tennis courts. The helper filters official court IDs by sport; do not identify a padel track from its number alone.
+
+Collect exactly three partners in addition to the account holder. Never duplicate a partner or invent identities to complete the request. Use the site's court type (`Couvert` on the currently inspected listings), and keep the fixed account tariff unchanged. Add a target date for scheduling. `sport` defaults to `tennis` for existing requests; include `sport: "padel"` explicitly in padel staging JSON, edits and the user summary. The repository includes `config.padel.json.sample` for local use. The CAPTCHA, payment and dry-run cancellation rules are the same.
 
 ## Reservations already on the account
 

@@ -10,10 +10,14 @@ import { parseClubCatalog, resolveClub } from './lib/clubs.js'
 import { reportBookingResult } from './lib/booking-result.js'
 import { bookingJobOptions } from './lib/booking-job.js'
 import { acquireOperationLock } from './lib/operation-lock.js'
+import { normalizeSport, validateSportPlayers, selectClubCourts } from './lib/sport.js'
+import { selectBookingDate, readPriceDescription } from './lib/booking-page.js'
 
 dayjs.extend(customParseFormat)
 
 const bookTennis = async () => {
+  const sport = normalizeSport(config.sport)
+  validateSportPlayers(sport, config.players)
   const DRY_RUN_MODE = process.argv.includes('--dry-run')
   const HEADED_MODE = process.argv.includes('--headed')
   const DEBUG_MODE = process.argv.includes('--debug')
@@ -26,7 +30,7 @@ const bookTennis = async () => {
     console.log('Script lancé en mode DRY RUN. Afin de tester votre configuration, une recherche va être lancé mais AUCUNE réservation ne sera réalisée')
   }
 
-  console.log(`${dayjs().format()} - Starting searching tennis`)
+  console.log(`${dayjs().format()} - Starting searching ${sport}`)
   const browser = await chromium.launch({
     headless: !HEADED_MODE,
     slowMo: HEADED_MODE ? 250 : 0,
@@ -70,17 +74,17 @@ const bookTennis = async () => {
 
       // select tennis location
       await waitForStep(page, '.tokens-input-text', captchaOptions)
-      location = resolveClub(parseClubCatalog(await page.content()), requestedLocation).name
+      const catalog = parseClubCatalog(await page.content())
+      location = resolveClub(catalog, requestedLocation).name
+      const courtNumbers = !Array.isArray(config.locations) ? config.locations[requestedLocation] : []
+      const allowedCourtIds = selectClubCourts(catalog, location, { sport, courtNumbers })
       await page.locator('.tokens-input-text').pressSequentially(`${location} `)
       const suggestion = page.locator('.tokens-suggestions-list-element').getByText(location, { exact: true })
       await suggestion.click()
 
       // select date
-      await page.click('#when')
       const date = config.date ? dayjs(config.date, 'D/MM/YYYY') : dayjs().add(6, 'days')
-      await page.waitForSelector(`[dateiso="${date.format('DD/MM/YYYY')}"]`)
-      await page.click(`[dateiso="${date.format('DD/MM/YYYY')}"]`)
-      await page.waitForSelector('.date-picker', { state: 'hidden' })
+      await selectBookingDate(page, date.format('DD/MM/YYYY'))
 
       await page.click('#rechercher')
 
@@ -96,19 +100,13 @@ const bookTennis = async () => {
             await page.click(`#head${location.replaceAll(' ', '')}${hour}h .panel-title`)
           }
 
-          const courtNumbers = !Array.isArray(config.locations) ? config.locations[requestedLocation] : []
           const slots = await page.locator(dateDeb).all()
           for (const slot of slots) {
             const courtId = await slot.getAttribute('courtid')
             const bookSlotButton = `[courtid="${courtId}"]${dateDeb}`
-            if (courtNumbers.length > 0) {
-              const courtName = (await page.locator(`.court:left-of(${bookSlotButton})`).innerText()).trim()
-              if (!courtNumbers.includes(parseInt(courtName.match(/Court N°(\d+)/)[1]))) {
-                continue
-              }
-            }
+            if (!allowedCourtIds.has(courtId)) continue
 
-            const [priceType, courtType] = (await page.locator(`.row.tennis-court:has(${bookSlotButton})`).locator('.price-description').innerHTML()).split('<br>')
+            const { priceType, courtType } = await readPriceDescription(page.locator(`.row.tennis-court:has(${bookSlotButton})`).locator('.price-description'))
             if (!config.priceType.includes(priceType) || !config.courtType.includes(courtType)) {
               continue
             }
@@ -224,7 +222,7 @@ const bookTennis = async () => {
       const event = {
         start,
         duration,
-        title: 'Réservation Tennis',
+        title: sport === 'padel' ? 'Réservation Padel' : 'Réservation Tennis',
         description: `Court: ${court}\nAdresse: ${address}`,
         location: address,
         status: 'CONFIRMED',

@@ -131,6 +131,7 @@ Plusieurs valeurs peuvent être acceptées, mais leur ordre ne définit pas une 
 
 | Champ | Utilisation |
 | --- | --- |
+| `sport` | `tennis` par défaut ; `padel` pour les pistes de padel. Le mode padel exige trois partenaires. |
 | `locations` | Clubs par ordre de préférence ; leurs noms sont vérifiés avant réservation. |
 | `date` | Date du terrain au format `D/M/YYYY` ou `DD/MM/YYYY`. Facultative en lancement direct : sans date, le script cherche à J+6. Obligatoire pour une demande Hermes. |
 | `hours` | Heures par ordre de préférence, par exemple `["18", "19"]`. |
@@ -193,6 +194,21 @@ La réponse contient `match` :
 Ainsi, `max rousie` est résolu en **Max Rousié**. Plusieurs sites peuvent partager le même libellé : leurs adresses et identifiants restent visibles. Une ambiguïté entre plusieurs noms ou une simple suggestion bloque la préparation.
 
 Le gestionnaire enregistre les identifiants et libellés vérifiés dans la demande. Au lancement, le script vérifie à nouveau le nom dans le catalogue de la page de recherche et sélectionne la suggestion exacte.
+
+## Padel municipal
+
+Utiliser [config.padel.json.sample](../config.padel.json.sample) comme modèle de préférences, avec `sport: "padel"`, le club exact `Padel Jules Ladoumègue` et **trois partenaires**. Les quatre pistes portent les numéros 1 à 4 ; leur sélection repose sur les identifiants officiels pour exclure les anciens courts de tennis présents sur la même fiche. Le sport est conservé dans les demandes Hermes et leur configuration temporaire.
+
+```sh
+cp -n config.padel.json.sample config.padel.json
+chmod 600 config.padel.json
+# Renseigner les vrais partenaires et les heures avant le test.
+TENNIS_REQUEST_CONFIG_PATH=./config.padel.json npm run start-dry-headed
+```
+
+`config.padel.json` est ignoré par Git. Le compte, le tarif et les notifications restent dans `config.fixed.json`. Les créneaux padel consultés sur le site portent le type `Couvert` et proposent `Gratuité` pour un compte éligible. Les parcours payants conservent l’exigence d’un carnet compatible. Le programme ne modifie pas les droits du compte.
+
+Pour une demande programmée, ajouter une date explicite et utiliser le même fichier variable avec `booking:manage prepare --input`. Pour un dry-run Hermes, ajouter le booléen `dryRun: true` ; pour un dry-run direct, utiliser la commande dédiée. Sans `sport`, les demandes existantes restent en tennis. Un club nommé Padel avec le mode tennis est refusé pour éviter une confusion.
 
 ## Tester et réserver
 

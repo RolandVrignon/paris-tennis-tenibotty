@@ -169,6 +169,26 @@ Les dates utilisent `D/M/YYYY` ou `DD/MM/YYYY`. Sans date en lancement direct, l
 
 [Tous les champs et la migration de l’ancien `config.json` →](docs/guide.md#configuration)
 
+<a id="padel"></a>
+## Padel Jules Ladoumègue
+
+Le padel municipal de [Jules Ladoumègue](https://tennis.paris.fr/tennis/#PadelJulesLadoum%C3%A8gue) est pris en charge dans ce même parcours Paris Tennis. Choisir **`"sport": "padel"`** et le libellé exact **`Padel Jules Ladoumègue`** (19e). Sans `sport`, le script conserve le mode `tennis`.
+
+Le mode padel sélectionne uniquement les pistes identifiées comme padel dans le catalogue officiel. Les anciens courts de tennis encore présents sur la fiche sont exclus, même si leurs numéros se recoupent. Le site exige **trois partenaires, en plus du titulaire du compte** ; une demande incomplète est refusée avant connexion.
+
+```sh
+cp -n config.padel.json.sample config.padel.json
+chmod 600 config.padel.json
+# Compléter les trois partenaires, les heures et éventuellement la date.
+TENNIS_REQUEST_CONFIG_PATH=./config.padel.json npm run start-dry-headed
+```
+
+Les paramètres fixes du compte et le tarif restent dans `config.fixed.json`. Le fichier d’exemple utilise `Couvert`, libellé actuellement affiché sur les créneaux padel du site. Pour le lancement direct, l’absence de date signifie J+6. Pour Hermes, fournir une date explicite et demander par exemple « Programme une réservation de padel à Jules Ladoumègue avec mes trois partenaires ».
+
+Le compte gratuit conserve `"priceType": ["Gratuité"]`. Pour un tarif payant, conserver le tarif autorisé et un carnet compatible ; aucun achat automatique de carnet n’est ajouté. Les confirmations, annulations, notifications et fichiers ICS utilisent le même moteur.
+
+Le dry-run complet nécessite trois partenaires renseignés : la seule détection de pistes disponibles ne prouve pas la réussite d’une réservation.
+
 <a id="tarifs"></a>
 ## Gratuité comprise
 

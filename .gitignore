@@ -2,6 +2,7 @@ node_modules/
 config.json
 config.fixed.json
 config.request.json
+config.padel.json
 img/
 logs/
 *.ics
