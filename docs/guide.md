@@ -131,7 +131,7 @@ Plusieurs valeurs peuvent être acceptées, mais leur ordre ne définit pas une 
 
 | Champ | Utilisation |
 | --- | --- |
-| `sport` | `tennis` par défaut ; `padel` pour les pistes de padel. Le mode padel exige trois partenaires. |
+| `sport` | `tennis` par défaut ; `padel` pour les pistes de padel. Le mode padel accepte un à trois partenaires. |
 | `locations` | Clubs par ordre de préférence ; leurs noms sont vérifiés avant réservation. |
 | `date` | Date du terrain au format `D/M/YYYY` ou `DD/MM/YYYY`. Facultative en lancement direct : sans date, le script cherche à J+6. Obligatoire pour une demande Hermes. |
 | `hours` | Heures par ordre de préférence, par exemple `["18", "19"]`. |
@@ -197,7 +197,7 @@ Le gestionnaire enregistre les identifiants et libellés vérifiés dans la dema
 
 ## Padel municipal
 
-Utiliser [config.padel.json.sample](../config.padel.json.sample) comme modèle de préférences, avec `sport: "padel"`, le club exact `Padel Jules Ladoumègue` et **trois partenaires**. Les quatre pistes portent les numéros 1 à 4 ; leur sélection repose sur les identifiants officiels pour exclure les anciens courts de tennis présents sur la même fiche. Le sport est conservé dans les demandes Hermes et leur configuration temporaire.
+Utiliser [config.padel.json.sample](../config.padel.json.sample) comme modèle de préférences, avec `sport: "padel"`, le club exact `Padel Jules Ladoumègue` et **un à trois partenaires**. Les quatre pistes portent les numéros 1 à 4 ; leur sélection repose sur les identifiants officiels pour exclure les anciens courts de tennis présents sur la même fiche. Le sport est conservé dans les demandes Hermes et leur configuration temporaire.
 
 ```sh
 cp -n config.padel.json.sample config.padel.json

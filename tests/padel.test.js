@@ -31,14 +31,21 @@ test('padel selection excludes tennis and deleted courts at the same club', () =
   assert.throws(() => selectClubCourts(catalog, name, { sport: 'padel', courtNumbers: [4] }), /No padel courts/)
   assert.throws(() => selectClubCourts(catalog, name), /Set sport to padel/)
 })
-test('padel requests require three partners and preserve sport through config merge', () => {
+test('padel requests accept one to three partners and preserve sport through config merge', () => {
   const normalized = normalizeBookingRequest(request, options)
   assert.equal(normalized.sport, 'padel')
   const config = buildBookingConfig({ account: { email: 'example@test.invalid', password: 'fixture' }, priceType: ['Gratuité'] }, normalized)
   assert.equal(config.sport, 'padel')
   assert.deepEqual(config.priceType, ['Gratuité'])
-  assert.throws(() => normalizeBookingRequest({ ...request, players: players.slice(0, 1) }, options), /three partners/)
-  assert.throws(() => validateSportPlayers('padel', []), /three partners/)
+  for (const count of [1, 2, 3]) {
+    const selectedPlayers = players.slice(0, count)
+    assert.doesNotThrow(() => validateSportPlayers('padel', selectedPlayers))
+    assert.deepEqual(normalizeBookingRequest({ ...request, players: selectedPlayers }, options).players, selectedPlayers)
+  }
+  for (const invalidPlayers of [undefined, [], [...players, { firstName: 'Four', lastName: 'Test' }]]) {
+    assert.throws(() => validateSportPlayers('padel', invalidPlayers), /between one and three partners/)
+    assert.throws(() => normalizeBookingRequest({ ...request, players: invalidPlayers }, options), /between one and three partners/)
+  }
   assert.throws(() => normalizeSport('squash'), /sport must/)
 })
 test('legacy requests default to tennis and retain TEP and gymnasium courts', () => {
@@ -53,14 +60,17 @@ test('Hermes preparation and edits preserve padel and reject tennis-only court n
   const fixedConfigPath = join(root, 'fixed.json')
   writeFileSync(fixedConfigPath, JSON.stringify({ account: { email: 'test@example.invalid', password: 'fixture' }, priceType: ['Gratuité'] }))
   const settings = { ...options, catalog, fixedConfigPath, stateDirectory: join(root, 'state'), hermesScriptsDirectory: join(root, 'scripts'), repositoryDirectory: root }
-  const prepared = await prepareBookingJob({ ...request, locations: ['padel jules'] }, settings)
+  const singlePartnerRequest = { ...request, players: players.slice(0, 1) }
+  const prepared = await prepareBookingJob({ ...singlePartnerRequest, locations: ['padel jules'] }, settings)
   assert.match(prepared.cronName, /^Padel /)
   const stored = JSON.parse(readFileSync(join(settings.stateDirectory, `${prepared.requestId}.json`), 'utf8'))
   assert.equal(stored.request.sport, 'padel')
+  assert.deepEqual(stored.request.players, singlePartnerRequest.players)
   assert.deepEqual(stored.request.locations, [name])
   await assert.rejects(() => editBookingJob(prepared.requestId, { ...request, locations: { [name]: [4] } }, settings), /No padel courts/)
-  const edited = await editBookingJob(prepared.requestId, { ...request, locations: { [name]: [2] } }, settings)
+  const edited = await editBookingJob(prepared.requestId, { ...singlePartnerRequest, locations: { [name]: [2] } }, settings)
   assert.equal(edited.request.sport, 'padel')
+  assert.deepEqual(edited.request.players, singlePartnerRequest.players)
   assert.deepEqual(edited.request.locations, { [name]: [2] })
 })
 test('date selection uses the visible picker despite duplicate hidden dates', async () => {
