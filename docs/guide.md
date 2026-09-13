@@ -72,6 +72,8 @@ Compléter les deux fichiers avant de réserver. La date et les partenaires des 
 
 ## Configuration
 
+Les comptes nommés, partenaires par défaut et demandes de deux heures sont détaillés dans le [README](../README.md#comptes-nommés-et-partenaires-habituels).
+
 ### Compte et paramètres fixes
 
 `config.fixed.json` contient les identifiants, le tarif accepté, les paramètres CAPTCHA et les notifications. Exemple pour un compte gratuit :
@@ -138,7 +140,9 @@ Plusieurs valeurs peuvent être acceptées, mais leur ordre ne définit pas une 
 | `date` | Date du terrain au format `D/M/YYYY` ou `DD/MM/YYYY`. Facultative en lancement direct : sans date, le script cherche à J+6. Obligatoire pour une demande Hermes. |
 | `hours` | Heures par ordre de préférence, par exemple `["18", "19"]`. |
 | `courtType` | `Couvert`, `Découvert`, ou les deux. |
-| `players` | Un à trois partenaires avec prénom et nom, sans inclure le titulaire du compte. |
+| `players` | Un à trois partenaires ; facultatif si le compte sélectionné possède `defaultPlayers`. Une valeur explicite remplace ce défaut. |
+| `bookingAccount` | Identifiant du compte configuré : `main` par défaut, ou une clé de `bookingAccounts`. |
+| `consecutive` | `{ "bookingAccount": "second" }` pour la deuxième heure sur le même terrain ; `players` peut y remplacer les partenaires par défaut du second compte. |
 
 Le script parcourt d’abord les clubs dans l’ordre, puis les heures demandées dans chaque club. Pour limiter les courts d’un club, remplacer le tableau `locations` par un objet :
 
@@ -229,7 +233,7 @@ Pour conserver une priorité padel puis tennis à 20 h, ajouter aux préférence
 ]
 ```
 
-Les heures et types de terrain peuvent différer par repli. En leur absence, les valeurs du choix principal s’appliquent. Les numéros de courts dans `locations` restent possibles. Les partenaires, le compte, le tarif, la date et le mode dry-run s’appliquent à toute la demande ; ils ne peuvent pas être remplacés dans un repli.
+Les heures et types de terrain peuvent différer par repli. En leur absence, les valeurs du choix principal s’appliquent. Les numéros de courts dans `locations` restent possibles. Les partenaires, le compte, le tarif, la date et le mode dry-run s’appliquent à tous les choix de la première réservation ; ils ne peuvent pas être remplacés dans un repli.
 
 Hermes vérifie les noms de tous les clubs et conserve la liste complète dans la demande. Modifier une tâche existante avec `booking:manage edit --request-id <id> --input <fichier>` et la configuration complète ; fournir `fallbacks: []` pour supprimer les replis. L’horaire de lancement et le cron restent attachés à la même demande. Ne pas créer un second cron pour le tennis de secours.
 
@@ -472,6 +476,8 @@ npm run booking:manage -- cleanup --request-id 'ID_DE_DEMANDE'
 | `dry_run_succeeded` | Dry-run terminé avec annulation vérifiée. |
 | `unavailable` | Exécution terminée sans réservation trouvée. |
 | `failed` | Exécution en échec. Consulter le journal. |
+| `partially_succeeded` | Première heure confirmée, deuxième non confirmée. Garder la première ; ne pas rejouer la demande. |
+| `dry_run_partial` | Une seule heure a terminé son test avec annulation vérifiée. |
 | `needs_reconciliation` | Résultat incertain, notamment après soumission ou interruption. Vérifier le compte avant une nouvelle tentative. |
 | `cancelled` | Demande future désactivée localement. |
 
@@ -538,7 +544,7 @@ La livraison Telegram des jobs Hermes fonctionne séparément de ntfy. Le lanceu
 
 La préparation Hermes exige les identifiants dans les paramètres fixes. Elle ne remplace pas cette validation par les variables `ACCOUNT_*`.
 
-Les demandes sont stockées en mode `600`, dans un dossier en mode `700`. Utiliser un même dossier d’état par compte pour partager le verrou d’exécution. Les opérations de réservation et d’annulation confirmée sont sérialisées. Un verrou `.operation-lock` laissé après une interruption demande de vérifier le processus et le compte avant de le retirer.
+Les demandes sont stockées en mode `600`, dans un dossier en mode `700`. Utiliser un même dossier d’état pour tous les comptes de cette installation afin de partager le verrou d’exécution. Les opérations de réservation et d’annulation confirmée sont sérialisées. Un verrou `.operation-lock` laissé après une interruption demande de vérifier le processus et le compte avant de le retirer.
 
 | Fichier ou dossier | Contenu |
 | --- | --- |

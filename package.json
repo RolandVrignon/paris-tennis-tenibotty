@@ -37,7 +37,8 @@
     "reservations:cancel": "node scripts/tennis.js reservations cancel",
     "booking:manage": "node scripts/booking-manager.js",
     "hermes:install": "node scripts/install-hermes-skill.js",
-    "availability:monitor": "node scripts/monitor-availability.js"
+    "availability:monitor": "node scripts/monitor-availability.js",
+    "accounts:list": "node scripts/tennis.js accounts list"
   },
   "dependencies": {
     "@gradio/client": "^2.6.0",

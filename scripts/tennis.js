@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { findClubs, loadClubCatalog } from '../lib/clubs.js'
 import { cancelReservation, listReservations } from '../lib/reservations.js'
+import { loadAccountConfig, describeBookingAccounts, resolveBookingProfile, assertBookingCredentials } from '../lib/config.js'
 
 console.log = (...values) => console.error(...values)
 const [resource, command, ...args] = process.argv.slice(2)
 try {
-  const allowed = resource === 'clubs' ? ['--query', '--arrondissement', '--headed'] : ['--id', '--confirm', '--headed']
+  const allowed = resource === 'accounts' ? [] : resource === 'clubs' ? ['--query', '--arrondissement', '--headed'] : ['--id', '--confirm', '--headed', '--account']
   const parsed = new Map()
   for (let i = 0; i < args.length; i++) {
     const key = args[i]
@@ -19,8 +20,16 @@ try {
   }
   const option = name => parsed.get(name)
   const options = { headed: args.includes('--headed') }
+  if (resource === 'reservations' && option('--account')) {
+    const fixed = loadAccountConfig()
+    const profile = resolveBookingProfile(fixed, option('--account'))
+    assertBookingCredentials(profile)
+    options.config = { ...fixed, account: profile.account, priceType: profile.priceType }
+  }
   let result
-  if (resource === 'clubs' && ['list', 'find'].includes(command)) {
+  if (resource === 'accounts' && command === 'list') {
+    result = { accounts: describeBookingAccounts(loadAccountConfig()) }
+  } else if (resource === 'clubs' && ['list', 'find'].includes(command)) {
     const query = option('--query')
     if (command === 'find' && !query) throw new Error('Missing --query')
     result = { source: 'Paris Tennis', fetchedAt: new Date().toISOString(), ...findClubs(await loadClubCatalog(options), { query, arrondissement: option('--arrondissement') }) }
@@ -29,7 +38,7 @@ try {
     result = { source: 'Paris Tennis', fetchedAt: new Date().toISOString(), reservations: await listReservations(options) }
   } else if (resource === 'reservations' && command === 'cancel') {
     result = await cancelReservation(option('--id'), { ...options, confirm: args.includes('--confirm') })
-  } else throw new Error('Usage: tennis.js clubs list|find [--query NAME] [--arrondissement N] | reservations list|cancel [--id ID] [--confirm] [--headed]')
+  } else throw new Error('Usage: tennis.js accounts list | clubs list|find [--query NAME] [--arrondissement N] | reservations list|cancel [--account ID] [--id ID] [--confirm] [--headed]')
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
 } catch (error) {
   process.stderr.write(`${JSON.stringify({ error: error.message })}\n`)

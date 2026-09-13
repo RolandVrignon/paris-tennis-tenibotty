@@ -9,7 +9,7 @@ import { buildBookingConfig, normalizeBookingRequest, getBookingSchedule, descri
 import { bookingJobOptions, claimBookingJob, updateBookingJob } from '../lib/booking-job.js'
 import { acquireOperationLock } from '../lib/operation-lock.js'
 import { loadMonitoringConfig } from '../lib/config.js'
-import { classifyBookingResult } from '../lib/booking-result.js'
+import { classifyBookingResult, classifyConsecutiveResult } from '../lib/booking-result.js'
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const args = process.argv.slice(2)
@@ -21,6 +21,7 @@ let record
 let options
 let claimed = false
 let outcome
+const legs = []
 let logFile
 let openingReviewRequired = false
 const controller = new AbortController()
@@ -37,8 +38,8 @@ try {
   options = bookingJobOptions({ stateDirectory: dirname(requestFile) })
   if (!checkOnly) release = acquireOperationLock(options.stateDirectory)
   record = JSON.parse(readFileSync(requestFile, 'utf8'))
-  const request = normalizeBookingRequest(record.request, { allowPastOpening: true })
   const fixed = JSON.parse(readFileSync(options.fixedConfigPath, 'utf8'))
+  const request = normalizeBookingRequest(record.request, { allowPastOpening: true, fixedConfig: fixed })
   const fullConfig = buildBookingConfig(fixed, request)
   loadMonitoringConfig({ bookingConfig: fullConfig, rootDirectory: root })
   // Check configuration without creating a secret file or changing job status.
@@ -71,7 +72,14 @@ try {
         updateBookingJob(record.id, { openingReviewRequired, logFile }, options)
         return
       }
-      if (message?.type !== 'tennis-result' || !['submitted', 'confirmed', 'dry-run-cancelled'].includes(message.status)) return
+      if (message?.type !== 'tennis-result' || !['submitted', 'confirmed', 'dry-run-cancelled', 'cleanup-unverified', ...(request.consecutive ? ['started', 'failed', 'unavailable'] : [])].includes(message.status)) return
+      if (request.consecutive) {
+        const leg = message.leg ?? 0
+        if (![0, 1].includes(leg) || ['confirmed', 'dry-run-cancelled'].includes(legs[leg]?.status)) return
+        legs[leg] = { status: message.status, accountId: leg === 0 ? request.bookingAccount || 'main' : request.consecutive.bookingAccount, selection: message.selection }
+        updateBookingJob(record.id, { legs, logFile }, options)
+        return
+      }
       if (outcome === 'confirmed' || outcome === 'dry-run-cancelled') return
       outcome = message.status
       // Persist confirmation before ancillary work (ICS, notifications) can fail.
@@ -84,8 +92,8 @@ try {
       child.once('error', reject)
       child.once('close', code => resolveCode(code ?? 1))
     })
-    const status = classifyBookingResult({ exitCode, outcome, dryRun: request.dryRun })
-    updateBookingJob(record.id, { status, outcome, openingReviewRequired, exitCode, logFile, completedAt: new Date().toISOString() }, options)
+    const status = request.consecutive ? classifyConsecutiveResult({ legs, exitCode, dryRun: request.dryRun }) : classifyBookingResult({ exitCode, outcome, dryRun: request.dryRun })
+    updateBookingJob(record.id, { status, outcome, ...(request.consecutive ? { legs } : {}), openingReviewRequired, exitCode, logFile, completedAt: new Date().toISOString() }, options)
     const label = `${request.date} — priorités : ${describeBookingChoices(request)}`
     const messages = {
       succeeded: `✅ Réservation Paris Tennis confirmée : ${label}.`,
@@ -95,13 +103,18 @@ try {
       needs_reconciliation: `⚠️ Résultat de réservation incertain : ${label}. Vérifier le compte avant toute nouvelle tentative. Journal : ${logFile}`,
       failed: `Échec de la réservation Paris Tennis : ${label}. Journal : ${logFile}`,
     }
+    const legSummary = request.consecutive ? legs.map((leg, i) => `${i + 1}: ${leg.accountId}, ${leg.selection?.location || '?'}, ${leg.selection?.hour || '?'}h, ${leg.status}`).join(' ; ') : ''
+    if (request.consecutive && ['succeeded', 'succeeded_with_warnings'].includes(status)) messages[status] = `✅ Deux heures consécutives confirmées : ${legSummary}.${exitCode ? ' Une étape annexe a échoué ; ne pas relancer.' : ''}`
+    messages.partially_succeeded = `⚠️ Réservation partielle : ${legSummary}. La deuxième heure n’est pas confirmée. La première est conservée ; ne pas relancer la demande.`
+    messages.dry_run_partial = `⚠️ Test partiel : ${legSummary}. Les deux heures n’ont pas été validées en dry-run.`
+    if (request.consecutive && status === 'needs_reconciliation') messages[status] += ` État par compte : ${legSummary}. Une réservation déjà confirmée est conservée.`
     process.stdout.write(`${messages[status]}${openingReviewRequired ? ' Fenêtre de recherche terminée : vérifier les horaires d’ouverture et la disponibilité à partir du journal ; un horaire incorrect n’est pas démontré.' : ''}\n`)
-    if (['failed', 'needs_reconciliation'].includes(status)) process.exitCode = 1
+    if (['failed', 'needs_reconciliation', 'partially_succeeded', 'dry_run_partial'].includes(status)) process.exitCode = 1
   }
 } catch (error) {
   if (claimed) {
-    const status = outcome === 'confirmed' ? 'succeeded_with_warnings' : outcome === 'submitted' || controller.signal.aborted ? 'needs_reconciliation' : 'failed'
-    updateBookingJob(record.id, { status, outcome, error: error.message, logFile, completedAt: new Date().toISOString() }, options)
+    const status = record.request.consecutive ? classifyConsecutiveResult({ legs, exitCode: 1, dryRun: record.request.dryRun }) : outcome === 'confirmed' ? 'succeeded_with_warnings' : outcome === 'submitted' || controller.signal.aborted ? 'needs_reconciliation' : 'failed'
+    updateBookingJob(record.id, { status, outcome, ...(record.request.consecutive ? { legs } : {}), error: error.message, logFile, completedAt: new Date().toISOString() }, options)
   }
   process.stderr.write(`${outcome === 'confirmed' ? 'Réservation confirmée, erreur après réservation' : 'Échec du lanceur Paris Tennis'} : ${error.message}\n`)
   process.exitCode = outcome === 'confirmed' ? 0 : 1

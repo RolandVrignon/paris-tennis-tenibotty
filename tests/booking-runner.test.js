@@ -89,3 +89,42 @@ test('a polling job started after its window never starts the browser', t => {
   assert.match(result.stderr, /Booking window expired/)
   assert.doesNotMatch(result.stderr, /Browser must not start/)
 })
+
+const consecutiveFixture = t => {
+  const f = fixture(t)
+  writeFileSync(join(f.root, 'config.fixed.json'), JSON.stringify({
+    account: { email: 'first@example.test', password: 'first' }, priceType: ['Gratuité'],
+    bookingAccounts: { second: { name: 'Second', email: 'second@example.test', password: 'second', priceType: ['Tarif plein'], defaultPlayers: [{firstName: 'First', lastName: 'Player'}] } },
+  }))
+  f.record.request.consecutive = { bookingAccount: 'second' }
+  f.save(f.record)
+  return f
+}
+const messages = rows => rows.map(([leg, status]) => `process.send(${JSON.stringify({type: 'tennis-result', leg, status})});`).join('\n')
+
+test('runner persists both account outcomes and reports two confirmed hours', t => {
+  const f = consecutiveFixture(t)
+  const result = f.run(messages([[0, 'submitted'], [0, 'confirmed'], [1, 'submitted'], [1, 'confirmed']]))
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(f.read().status, 'succeeded')
+  assert.deepEqual(f.read().legs.map(row => row.accountId), ['main', 'second'])
+  assert.match(result.stdout, /Deux heures consécutives confirmées/)
+})
+test('runner never reports full success after only the first hour or an interrupted second attempt', t => {
+  for (const [secondStatus, expected] of [['unavailable', 'partially_succeeded'], ['submitted', 'needs_reconciliation'], ['started', 'needs_reconciliation'], ['cleanup-unverified', 'needs_reconciliation']]) {
+    const f = consecutiveFixture(t)
+    const result = f.run(messages([[0, 'confirmed'], [1, secondStatus]]) + '\nprocess.exitCode = 1')
+    assert.equal(result.status, 1)
+    assert.equal(f.read().status, expected)
+    assert.equal(f.read().legs[0].status, 'confirmed')
+    assert.equal(f.run('throw new Error("must not replay")').status, 1)
+  }
+})
+test('runner reports dry-run success only after both accounts cancel their holds', t => {
+  const f = consecutiveFixture(t)
+  f.record.request.dryRun = true
+  f.save(f.record)
+  const result = f.run(messages([[0, 'dry-run-cancelled'], [1, 'dry-run-cancelled']]))
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(f.read().status, 'dry_run_succeeded')
+})

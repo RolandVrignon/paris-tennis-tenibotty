@@ -9,20 +9,28 @@ import { waitForStep } from './lib/captcha.js'
 import { reportBookingResult } from './lib/booking-result.js'
 import { bookingJobOptions } from './lib/booking-job.js'
 import { acquireOperationLock } from './lib/operation-lock.js'
-import { getBookingTargets } from './lib/booking-request.js'
+import { getBookingTargets, buildBookingConfig } from './lib/booking-request.js'
 import { normalizePolling, parseSearchStart, searchAttempts } from './lib/search-window.js'
-import { loadMonitoringConfig } from './lib/config.js'
+import { loadMonitoringConfig, resolveBookingProfile, VARIABLE_CONFIG_KEYS } from './lib/config.js'
 import { authenticatePage } from './lib/site-session.js'
 import { guardMonitorPage } from './lib/availability-monitor.js'
 import { searchBookingTarget, clickBookingCandidate } from './lib/booking-search.js'
 
 dayjs.extend(customParseFormat)
 
-const bookTennis = async () => {
-  const targets = getBookingTargets(config)
-  const monitoring = loadMonitoringConfig({ bookingConfig: config })
+const bookTennis = async (config, { leg = 0, targetsOverride, searchStartOverride, monitoring } = {}) => {
+  const targets = targetsOverride || getBookingTargets(config)
+  // Monitoring may intentionally use the same credentials as this booking profile.
+  monitoring = { ...monitoring, dedicated: monitoring.dedicated && monitoring.account.email.trim().toLowerCase() !== config.account.email.trim().toLowerCase() }
+  let outcome
+  let selection
+  const report = status => {
+    outcome = status
+    reportBookingResult(status, { leg, accountId: config.bookingAccount || 'main', accountName: config.account.name || config.bookingAccount || 'main', selection })
+  }
+  if (config.consecutiveRun) report('started')
   const polling = normalizePolling(config.polling)
-  const searchStart = parseSearchStart(process.env.TENNIS_SEARCH_START_AT)
+  const searchStart = searchStartOverride ?? parseSearchStart(process.env.TENNIS_SEARCH_START_AT)
   const DRY_RUN_MODE = process.argv.includes('--dry-run')
   const HEADED_MODE = process.argv.includes('--headed')
   const DEBUG_MODE = process.argv.includes('--debug')
@@ -118,10 +126,11 @@ const bookTennis = async () => {
           continue
         }
       }
+      selection = { sport, location: result.location, courtId: candidate.courtId, hour: candidate.hour, courtType: candidate.courtType, date: date.format('DD/MM/YYYY') }
       const selectedHour = candidate.hour
       debugLog(`slot-selected role=${role} date=${date.format('YYYY-MM-DD')} hour=${candidate.hour} courtId=${candidate.courtId} priceType=${candidate.priceType}`)
-      await clickBookingCandidate(page, result.location, candidate)
       canAbortBooking = true
+      await clickBookingCandidate(page, result.location, candidate)
 
       page.setDefaultTimeout(90000)
       await waitForStep(page, '.order-steps-infos h2 >> text="1 / 3 - Validation du court"', captchaOptions)
@@ -174,12 +183,12 @@ const bookTennis = async () => {
         canAbortBooking = false
         debugLog(`dry-run-cancelled status=${cancelResponse.status()}`)
         finished = true
-        reportBookingResult('dry-run-cancelled')
+        report('dry-run-cancelled')
 
         break locationsLoop
       }
 
-      reportBookingResult('submitted')
+      report('submitted')
       if (isFreeBooking) {
         const freePrice = page.locator('.priceTable .price-item[paymentMode="free"]')
         debugLog(`free-price-options=${await freePrice.count()}`)
@@ -199,7 +208,7 @@ const bookTennis = async () => {
       await page.waitForSelector('.confirmReservation')
       debugLog('reservation-confirmation-visible')
       finished = true
-      reportBookingResult('confirmed')
+      report('confirmed')
 
       // Extract reservation details
       const address = (await page.locator('.address').textContent()).trim().replace(/( ){2,}/g, ' ')
@@ -238,7 +247,7 @@ const bookTennis = async () => {
 
       const { value } = createdEvent
       if (!process.env.GITHUB_ACTIONS) {
-        writeFileSync('event.ics', value)
+        writeFileSync(config.consecutiveRun ? `event-${leg + 1}.ics` : 'event.ics', value)
       }
       if (config.ntfy?.enable === true || process.env.NTFY_TOPIC) {
         await notify(Buffer.from(value, 'utf8'), 'event.ics',
@@ -263,8 +272,10 @@ const bookTennis = async () => {
       if (canAbortBooking) {
         try {
           const response = await page.request.post('https://tennis.paris.fr/tennis/rest/abortBooking', { timeout: 10000 })
+          if (!response.ok()) report('cleanup-unverified')
           console.log(response.ok() ? 'Pending booking abandoned after failure' : 'Could not abandon the pending booking; check your account')
         } catch {
+          report('cleanup-unverified')
           console.log('Could not abandon the pending booking; check your account')
         }
       }
@@ -279,7 +290,35 @@ const bookTennis = async () => {
   } finally {
     await browser.close()
   }
+  if (outcome === 'started') report(process.exitCode ? 'failed' : 'unavailable')
+  return { status: outcome, selection }
 }
 
 const release = process.send ? () => {} : acquireOperationLock(bookingJobOptions().stateDirectory)
-try { await bookTennis() } finally { release() }
+try {
+  config.account = { ...config.account, email: config.account?.email || process.env.ACCOUNT_EMAIL, password: config.account?.password || process.env.ACCOUNT_PASSWORD }
+  const request = Object.fromEntries(VARIABLE_CONFIG_KEYS.filter(key => Object.hasOwn(config, key)).map(key => [key, config[key]]))
+  request.date ||= dayjs().add(6, 'days').format('DD/MM/YYYY')
+  const fullConfig = buildBookingConfig(config, request)
+  const monitoring = loadMonitoringConfig({ bookingConfig: config })
+  const settings = (id, players) => {
+    const profile = resolveBookingProfile(config, id)
+    return { ...fullConfig, account: profile.account, priceType: profile.priceType, bookingAccount: id, players, consecutiveRun: !!fullConfig.consecutive }
+  }
+  const first = await bookTennis(settings(fullConfig.bookingAccount || 'main', fullConfig.players), { monitoring })
+  if (fullConfig.consecutive && ['confirmed', 'dry-run-cancelled'].includes(first.status)) {
+    const next = fullConfig.consecutive
+    const selected = first.selection
+    const hour = String(Number(selected.hour) + 1).padStart(2, '0')
+    console.log(`Consecutive booking: ${next.bookingAccount}, ${selected.location}, ${hour}h, court ${selected.courtId}`)
+    // Only the next hour on the exact confirmed court; no fallback or repeated first booking.
+    const second = await bookTennis({ ...settings(next.bookingAccount, next.players), polling: undefined }, {
+      leg: 1, monitoring, searchStartOverride: Date.now(),
+      targetsOverride: [{ ...selected, hours: [hour], courtType: [selected.courtType], courtNumbers: [], priority: 0 }],
+    })
+    if (!['confirmed', 'dry-run-cancelled'].includes(second.status)) {
+      console.log(`Consecutive booking incomplete: first hour ${first.status}; second hour ${second.status || 'unavailable'}. Do not replay the first reservation.`)
+      process.exitCode = 1
+    } else console.log('Both consecutive hours completed successfully')
+  }
+} finally { release() }

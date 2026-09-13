@@ -57,6 +57,67 @@ Avec Hermes, la demande devient une tentative ponctuelle sur ton VPS. Tu peux en
 | **Tester avant de réserver** | Propose un dry-run visible qui va jusqu’au paiement puis libère la réservation temporaire. |
 | **Gérer la suite** | Consulte la réservation courante, l’annule sur demande et génère un événement ICS après confirmation. |
 
+## Comptes nommés et partenaires habituels
+
+Chaque compte de réservation a son **nom**, ses identifiants, son **tarif** et ses **partenaires par défaut** dans `config.fixed.json`. Le compte principal reste dans `account` (identifiant `main`), les autres dans `bookingAccounts` (par exemple `second`). `monitoringAccount` conserve un bloc distinct, avec un `name` facultatif ; ses identifiants peuvent être les mêmes que ceux de `bookingAccounts.second`.
+
+```json
+{
+  "account": {
+    "name": "Roland",
+    "email": "COMPTE_PRINCIPAL",
+    "password": "MOT_DE_PASSE",
+    "priceType": ["Gratuité"],
+    "defaultPlayers": [{"firstName": "Paul", "lastName": "Dupont"}]
+  },
+  "bookingAccounts": {
+    "second": {
+      "name": "Paul",
+      "email": "DEUXIEME_COMPTE",
+      "password": "MOT_DE_PASSE",
+      "priceType": ["Tarif plein"],
+      "defaultPlayers": [{"firstName": "Roland", "lastName": "Vrignon"}]
+    }
+  },
+  "monitoringAccount": {"name": "Monitoring", "email": "", "password": ""}
+}
+```
+
+Remplace les identités d’exemple par les vrais joueurs. Le `priceType` historique à la racine reste accepté pour le compte principal ; `account.priceType` est prioritaire. Un compte payant nécessite toujours un **carnet compatible déjà crédité** : le bot n’achète pas de carnet.
+
+Pour une demande, `bookingAccount` vaut `main` par défaut. Sans champ `players`, les partenaires du compte sont repris et enregistrés lors de la préparation. Un `players` explicite les remplace pour cette demande seulement. `players: []` est une erreur, pas une demande d’utiliser les valeurs par défaut.
+
+### Deux heures consécutives, deux comptes
+
+> Programme deux heures de tennis à Pailleron lundi à 20 h, d’abord avec Roland puis Paul, avec leurs partenaires habituels.
+
+```json
+{
+  "date": "21/09/2026",
+  "sport": "tennis",
+  "locations": ["Edouard Pailleron"],
+  "hours": ["20"],
+  "courtType": ["Couvert"],
+  "bookingAccount": "main",
+  "consecutive": {"bookingAccount": "second"},
+  "dryRun": true
+}
+```
+
+Cette option lance **deux réservations successives d’une heure** : 20–21 h avec le premier compte, puis 21–22 h avec le second, sur **le même terrain, dans le même centre et pour le même sport**. Elle suit le terrain effectivement choisi, y compris après un repli padel → tennis. `hours` reste une liste de préférences pour la première heure ; elle ne représente pas une durée. Le départ à 23 h est refusé pour éviter de changer de date.
+
+Les deux réservations ne sont pas atomiques. Si la seconde heure n’est plus disponible, la première reste réservée et Hermes annonce un **succès partiel**. Aucune annulation automatique de la première, aucun autre club en remplacement de la seconde et aucune relance de la demande terminée. Une confirmation incertaine demande de vérifier le compte concerné. Les deux comptes de réservation doivent être distincts et correspondre aux joueurs présents ; cette option ne modifie pas les quotas du site. L’application des quotas au padel reste à vérifier auprès du centre.
+
+Le dry-run teste et annule chaque heure séparément. Deux confirmations produisent `event-1.ics` et `event-2.ics`, ainsi qu’une notification par réservation si ntfy est activé. Sans `consecutive`, le fonctionnement reste celui d’une réservation.
+
+```sh
+node scripts/tennis.js accounts list
+node scripts/tennis.js reservations list --account second
+node scripts/tennis.js reservations cancel --account second --id <id>
+```
+
+`accounts list` expose seulement les identifiants courts, noms, tarifs, partenaires et l’état de configuration, jamais les identifiants de connexion. Utilise le même `--account` pour la consultation, l’aperçu et la confirmation d’annulation. [Configuration complète d’exemple](config.fixed.json.sample).
+
 <a id="telegram"></a>
 ## Parle tennis, pas commandes
 

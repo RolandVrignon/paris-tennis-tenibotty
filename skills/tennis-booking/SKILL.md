@@ -67,7 +67,7 @@ Only report cancellation when `status=cancelled` and `verified=true`. If the boo
 
 ## Prepare and schedule a new booking
 
-Collect the target court date, ordered clubs/hours, court types (`Couvert`, `Découvert`), and one to three partners (first/last names). Resolve relative dates in Europe/Paris. Preserve fallback order. Show the exact official clubs and complete booking summary; use existing explicit authorization if already given, otherwise get confirmation before scheduling a real booking.
+Collect the target court date, ordered clubs/hours and court types (`Couvert`, `Découvert`). Run `accounts list` to resolve the requested account by its name or id and reuse its default partners; ask for first/last names only if defaults are missing or the user asks for different guests. Resolve relative dates in Europe/Paris. Preserve fallback order. Show the exact official clubs and complete booking summary; use existing explicit authorization if already given, otherwise get confirmation before scheduling a real booking.
 
 When the user asks whether a court can be booked or the target date is missing, calculate the date seven calendar days after today in `Europe/Paris` (J+7). Ask for the missing date and hours using the actual computed date in this format: `- **La date** (à partir du DD/MM) et **les horaires souhaités**, par ordre de préférence.` For example, on 11/09 say `à partir du 18/09`. Recalculate this value for every conversation; never reuse the example date or offer an earlier target date.
 
@@ -145,4 +145,32 @@ The fixed configuration may contain `monitoringAccount` with `email` and `passwo
 
 Keep this block out of staging requests, cron prompts and variable preferences. Tell the user to fill it in the VPS fixed configuration before the cron starts. The runner closes the monitoring browser context when availability is detected, logs into a fresh context as the booking account, and rechecks availability and that account's tariff before selecting a slot. Different tariff labels on the monitoring account are expected. If revalidation finds no compatible slot, monitoring resumes with a thirty-second per-slot cooldown before another booking-account login. Never claim the account switch prevents bot detection or guarantees that an observed slot remains available.
 
-Standalone monitoring reports `accountRole` as `monitoring` or `booking`; reservation listing and cancellation always use the main account. If the optional block is still empty, explicitly state that the scheduled monitor will continue using the main account.
+Standalone monitoring reports `accountRole` as `monitoring` or `booking`; reservation listing and cancellation default to the main account and accept `--account ID` for another configured booking account. If the optional block is still empty, explicitly state that the scheduled monitor will continue using the main account.
+
+
+## Named booking accounts, default guests and consecutive hours
+
+Run `node '{{PROJECT_DIR}}/scripts/tennis.js' accounts list` to obtain safe account metadata: `id`, `name`, `priceType`, `defaultPlayers` and `credentialsConfigured`. Never read the fixed file or request passwords in chat. `account` is the main account with id `main`; `bookingAccounts` holds additional accounts by id. Each has a display `name`, credentials, `priceType` and `defaultPlayers`. `monitoringAccount` remains a separate block and can share credentials with an additional booking account. A `name` is a display label, never a substitute for a guest's full identity. If names match ambiguously, ask for the account id.
+
+Variable requests accept `bookingAccount` (default `main`). Omit `players` to reuse that account's `defaultPlayers`; explicit `players` overrides the defaults for this request only. Do not send an empty array. Preparing/editing snapshots the resolved guests, so later changes to defaults do not silently change scheduled requests. Never automatically reuse the first account's guest as the second account's guest.
+
+For an explicit request for two consecutive hours with two players' accounts, add `consecutive: {"bookingAccount":"second"}`. Optional `consecutive.players` overrides only the second account's default. Example staging request:
+
+```json
+{
+  "sport": "tennis",
+  "date": "21/09/2026",
+  "locations": ["Edouard Pailleron"],
+  "hours": ["20"],
+  "courtType": ["Couvert"],
+  "bookingAccount": "main",
+  "consecutive": {"bookingAccount":"second"},
+  "dryRun": false
+}
+```
+
+Use one prepared request and one cron. Show both account display names/ids, their tariffs, each guest list and the two hours in the user summary. Two hours must be requested explicitly; never add this option to an existing single-hour job merely because a second account was configured. `hours` remains first-hour preferences. The second reservation is the immediately next hour on the exact court and sport actually chosen, including after a primary fallback. No cross-midnight start at 23h, no independent second-hour club fallback. Paid profiles require an existing compatible ticket book; the bot never purchases one. The two booking accounts must belong to distinct participating players. Do not claim extra quota or confirmed padel quota rules.
+
+The first successful reservation is retained if the second fails. `partially_succeeded` means only one hour is confirmed; do not replay or automatically cancel it. `needs_reconciliation` means a submission, interrupted attempt or hold cleanup is uncertain: inspect the indicated accounts before any new action. The persisted `legs` array identifies each account and selected hour/court. `dry_run_succeeded` requires two verified hold cancellations; `dry_run_partial` is not validation of both hours. Real success produces two ICS files and optional per-reservation ntfy notifications.
+
+Use `reservations list --account ID` for each relevant account, then the same `--account ID` for cancellation preview and confirmation. Missing `--account` defaults to `main`. The monitoring account is not automatically a reserving player: only an explicit configured booking profile can be selected for a reservation.

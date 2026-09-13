@@ -1,15 +1,39 @@
 {
   "account": {
+    "name": "Roland",
     "email": "user.name@host.com",
-    "password": "YOUR_PASSWORD"
+    "password": "YOUR_PASSWORD",
+    "priceType": [
+      "Gratuité"
+    ],
+    "defaultPlayers": [
+      {
+        "firstName": "Paul",
+        "lastName": "Dupont"
+      }
+    ]
+  },
+  "bookingAccounts": {
+    "second": {
+      "name": "Paul",
+      "email": "second.player@host.com",
+      "password": "SECOND_PLAYER_PASSWORD",
+      "priceType": [
+        "Tarif plein"
+      ],
+      "defaultPlayers": [
+        {
+          "firstName": "Roland",
+          "lastName": "Vrignon"
+        }
+      ]
+    }
   },
   "monitoringAccount": {
+    "name": "Monitoring",
     "email": "",
     "password": ""
   },
-  "priceType": [
-    "Gratuité"
-  ],
   "ai": {
     "enable": true,
     "space": "Nischay103/captcha_recognition",
