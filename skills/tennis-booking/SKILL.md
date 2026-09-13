@@ -130,3 +130,10 @@ Delete that staging file afterward. The existing one-shot execution stays attach
 ## Operational boundaries
 
 Keep fixed configuration private; no secrets in cron prompts or names. Do not alter the account's tariff from a conversation request. A CAPTCHA may require `--headed` and manual intervention; report headless failures honestly. Do not bypass or delete a lock until the process and account state have been reconciled. Reservation cancellation is tested locally against a simulated native form; do not claim a real cancellation test unless it was explicitly performed and verified.
+
+
+## Read-only opening monitoring
+
+When asked to measure when a club opens availability, use `scripts/monitor-availability.js`, not the booking runner or a dry-run that holds a court. Required flags: `--club`, `--date`, `--start` and `--end` (timestamps with timezone); optional `--sport padel`, `--interval-seconds 2`, `--output-dir`, `--check`. It observes every hour for the specified club and sport. It never selects a slot, continues through the bounded window, and stops on three consecutive errors.
+
+Schedule one no-agent Hermes job running a shell wrapper in `{{PROJECT_DIR}}`, with an explicit delivery destination verified from the existing chat route. Ensure the Hermes script timeout exceeds the monitoring window plus a margin. Preserve other booking jobs. Read the JSONL observations and JSON report: distinguish first visible slots, first account-bookable slots, a preceding empty sample, errors, and availability already present at the first successful sample. Report the measured interval, not an exact server opening time or an assumed J+6 rule. Do not modify booking schedules from one sample without a user request.

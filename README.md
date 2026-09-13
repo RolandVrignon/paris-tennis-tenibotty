@@ -229,6 +229,20 @@ Le journal conserve les heures des tentatives et les résultats. L’expiration 
 
 Sans `polling`, le parcours reste un seul passage. `fallbackMode: "each-cycle"` permet, si demandé, de vérifier tous les choix à chaque cycle. En lancement direct, la fenêtre commence au démarrage ; pour Hermes, sa fin reste fixée à l’ouverture prévue + dix minutes maximum, même si le lancement est retardé.
 
+## Mesurer l’heure d’apparition des créneaux
+
+`availability:monitor` observe un club et une date **sans sélectionner de créneau**. Il relève toutes les heures et pistes du sport demandé, conserve les résultats horodatés dans `logs/monitoring/`, puis produit un rapport JSON et un résumé pour Hermes.
+
+```sh
+npm run availability:monitor -- --club "Padel Jules Ladoumègue" --sport padel \
+  --date 20/09/2026 --start 2026-09-14T07:55:00+02:00 \
+  --end 2026-09-14T08:10:00+02:00 --interval-seconds 2
+```
+
+Cette commande doit être lancée pendant la fenêtre ou au plus dix minutes avant. Ajouter `--check` pour valider les paramètres sans navigateur. Le monitoring reste actif jusqu’à la fin de la fenêtre, même si des créneaux apparaissent. Trois erreurs consécutives l’arrêtent et sont signalées.
+
+Le rapport distingue les créneaux affichés et ceux accessibles au compte. Il indique le dernier relevé vide et la première apparition ; l’intervalle réellement mesuré dépend des réponses du site. Des créneaux déjà présents au premier relevé ne permettent pas de déduire leur heure d’ouverture. Les erreurs et CAPTCHA ne sont jamais comptés comme des résultats vides.
+
 <a id="tarifs"></a>
 ## Gratuité comprise
 

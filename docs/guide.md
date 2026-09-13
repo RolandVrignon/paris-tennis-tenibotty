@@ -607,3 +607,14 @@ L’annulation d’une réservation confirmée dispose de tests en simulation. U
 Utiliser les onglets **Issues** ou **Pull requests** du dépôt qui héberge le fork. Exécuter ESLint et les tests adaptés aux changements, sans inclure de configuration privée, journal du compte ou capture personnelle.
 
 Projet initial : [bertrandda/par-ici-tennis](https://github.com/bertrandda/par-ici-tennis). Licence MIT — voir [LICENSE](../LICENSE).
+
+
+## Monitoring des ouvertures
+
+La commande `npm run availability:monitor -- --club "Padel Jules Ladoumègue" --sport padel --date 20/09/2026 --start 2026-09-14T07:55:00+02:00 --end 2026-09-14T08:10:00+02:00 --interval-seconds 2` observe toutes les heures de cette journée. Elle ne lance pas `index.js`, ne sélectionne aucun créneau et bloque les endpoints de réservation et d’annulation sur sa page navigateur.
+
+Elle utilise uniquement le compte fixe et le verrou partagé avec les opérations tennis. Les préférences de réservation et la tâche programmée restent indépendantes. Les fichiers `logs/monitoring/*.jsonl` et `*.report.json` sont privés (mode 600), hors Git. `--output-dir` permet de choisir un autre dossier privé ; `--check` valide seulement la configuration. Une fenêtre terminée ou des fichiers de preuve déjà existants ne sont pas rejoués ni écrasés.
+
+Pour Hermes, programmer un seul cron `--no-agent` qui exécute un wrapper shell depuis le repo et délivre stdout dans le chat souhaité. Le wrapper doit appeler cette commande de monitoring, jamais le script de réservation. Prévoir `cron.script_timeout_seconds` supérieur à la durée de la fenêtre, avec une marge pour la connexion et le rapport. Le résumé final indique la première apparition, le dernier relevé vide, les erreurs et les chemins des preuves. Une erreur de connexion ou trois erreurs successives produisent un échec explicite.
+
+Une transition vide → créneaux permet d’encadrer l’apparition observée, pas de certifier l’heure exacte du serveur. Un relevé positif initial signifie seulement « déjà disponible à cet instant ». Conserver séparément les slots affichés et les boutons accessibles au compte ; les droits du compte peuvent limiter la seconde catégorie. La règle de programmation n’est jamais modifiée automatiquement d’après une seule observation.
