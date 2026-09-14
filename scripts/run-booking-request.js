@@ -105,7 +105,7 @@ try {
     }
     const legSummary = request.consecutive ? legs.map((leg, i) => `${i + 1}: ${leg.accountId}, ${leg.selection?.location || '?'}, ${leg.selection?.hour || '?'}h, ${leg.status}`).join(' ; ') : ''
     if (request.consecutive && ['succeeded', 'succeeded_with_warnings'].includes(status)) messages[status] = `✅ Deux heures consécutives confirmées : ${legSummary}.${exitCode ? ' Une étape annexe a échoué ; ne pas relancer.' : ''}`
-    messages.partially_succeeded = `⚠️ Réservation partielle : ${legSummary}. La deuxième heure n’est pas confirmée. La première est conservée ; ne pas relancer la demande.`
+    messages.partially_succeeded = `⚠️ Réservation partielle : ${legSummary}. L’heure confirmée est conservée, même si seule la deuxième a réussi ; ne pas relancer la demande.`
     messages.dry_run_partial = `⚠️ Test partiel : ${legSummary}. Les deux heures n’ont pas été validées en dry-run.`
     if (request.consecutive && status === 'needs_reconciliation') messages[status] += ` État par compte : ${legSummary}. Une réservation déjà confirmée est conservée.`
     process.stdout.write(`${messages[status]}${openingReviewRequired ? ' Fenêtre de recherche terminée : vérifier les horaires d’ouverture et la disponibilité à partir du journal ; un horaire incorrect n’est pas démontré.' : ''}\n`)

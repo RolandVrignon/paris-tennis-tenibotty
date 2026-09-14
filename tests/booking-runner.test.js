@@ -128,3 +128,17 @@ test('runner reports dry-run success only after both accounts cancel their holds
   assert.equal(result.status, 0, result.stderr)
   assert.equal(f.read().status, 'dry_run_succeeded')
 })
+
+test('runner retains and accurately reports a second-hour-only success with out-of-order results', t => {
+  for (const [firstStatus, expected] of [['unavailable', 'partially_succeeded'], ['failed', 'partially_succeeded'], ['submitted', 'needs_reconciliation'], ['cleanup-unverified', 'needs_reconciliation']]) {
+    const f = consecutiveFixture(t)
+    const result = f.run(messages([[1, 'submitted'], [1, 'confirmed'], [0, firstStatus]]) + '\nprocess.exitCode = 1')
+    assert.equal(result.status, 1)
+    assert.equal(f.read().status, expected)
+    assert.equal(f.read().legs[1].status, 'confirmed')
+    assert.equal(f.read().legs[1].accountId, 'second')
+    assert.doesNotMatch(result.stdout, /La première est conservée|La deuxième heure n’est pas confirmée/)
+    if (expected === 'partially_succeeded') assert.match(result.stdout, /même si seule la deuxième a réussi/)
+    assert.equal(f.run('throw new Error("must not replay")').status, 1)
+  }
+})

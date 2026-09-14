@@ -142,7 +142,7 @@ Plusieurs valeurs peuvent être acceptées, mais leur ordre ne définit pas une 
 | `courtType` | `Couvert`, `Découvert`, ou les deux. |
 | `players` | Un à trois partenaires ; facultatif si le compte sélectionné possède `defaultPlayers`. Une valeur explicite remplace ce défaut. |
 | `bookingAccount` | Identifiant du compte configuré : `main` par défaut, ou une clé de `bookingAccounts`. |
-| `consecutive` | `{ "bookingAccount": "second" }` pour la deuxième heure sur le même terrain ; `players` peut y remplacer les partenaires par défaut du second compte. |
+| `consecutive` | `{ "bookingAccount": "second" }` lance les deux heures en parallèle dans deux Chromium distincts, sur le même terrain ; `players` peut y remplacer les partenaires par défaut du second compte. Toute heure confirmée est conservée, y compris la deuxième seule. |
 
 Le script parcourt d’abord les clubs dans l’ordre, puis les heures demandées dans chaque club. Pour limiter les courts d’un club, remplacer le tableau `locations` par un objet :
 
@@ -476,7 +476,7 @@ npm run booking:manage -- cleanup --request-id 'ID_DE_DEMANDE'
 | `dry_run_succeeded` | Dry-run terminé avec annulation vérifiée. |
 | `unavailable` | Exécution terminée sans réservation trouvée. |
 | `failed` | Exécution en échec. Consulter le journal. |
-| `partially_succeeded` | Première heure confirmée, deuxième non confirmée. Garder la première ; ne pas rejouer la demande. |
+| `partially_succeeded` | Une seule heure confirmée, la première ou la deuxième. Garder l’heure obtenue ; ne pas rejouer la demande. |
 | `dry_run_partial` | Une seule heure a terminé son test avec annulation vérifiée. |
 | `needs_reconciliation` | Résultat incertain, notamment après soumission ou interruption. Vérifier le compte avant une nouvelle tentative. |
 | `cancelled` | Demande future désactivée localement. |

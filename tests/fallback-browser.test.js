@@ -16,22 +16,23 @@ const catalog = { features: Object.entries(names).map(([sport, name], i) => ({ p
 } })) }
 
 // Exercise the real entry point against a local site, with no account or network service.
-const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brokenHold = false, uncertainSubmit = false, padelPrice = 'Gratuité', polling, padelAfter = 0, searchDelay = 0, renderDelay = 0, startDelay = 0, dualAccount = false, bookingPadel = true, consecutive = false, secondAvailable = true, secondUncertain = false, secondBrokenHold = false, explicitPlayers, secondMatchesMonitoring = false, secondOtherCourt = false, secondPrice = 'Tarif plein' } = {}) => {
+const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brokenHold = false, uncertainSubmit = false, padelPrice = 'Gratuité', polling, padelAfter = 0, searchDelay = 0, renderDelay = 0, startDelay = 0, dualAccount = false, bookingPadel = true, consecutive = false, secondAvailable = true, secondUncertain = false, secondBrokenHold = false, explicitPlayers, secondMatchesMonitoring = false, secondOtherCourt = false, secondPrice = 'Tarif plein', firstAvailable = true, firstBrokenHold = false, firstUncertain = false, overlap = false, firstBookingLoginFailure = false, failedAbort = false } = {}) => {
   const root = mkdtempSync(join(tmpdir(), 'tennis-browser-fallback-'))
-  const observed = { searches: [], holds: [], submissions: [], aborts: 0, searchTimes: [], loginAt: null, logins: [], loginCookies: [], searchAccounts: [], holdAccounts: [], submissionAccounts: [], holdHours: [], partners: [], paymentModes: [] }
+  const observed = { searches: [], holds: [], submissions: [], aborts: 0, searchTimes: [], loginAt: null, logins: [], loginCookies: [], searchAccounts: [], holdAccounts: [], submissionAccounts: [], holdHours: [], partners: [], paymentModes: [], abortAccounts: [], submissionHours: [], firstPaymentWaitedForSecond: false }
+  let releaseFirstPayment
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://fixture')
     const sport = url.searchParams.get('sport') || 'padel'
     const hour = url.searchParams.get('hour') || '20'
     const account = req.headers.cookie?.includes('account=monitoring') ? 'monitoring' : req.headers.cookie?.includes('account=second') ? 'second' : 'booking'
     let html = ''
-    if (url.pathname.endsWith('abortBooking')) { observed.aborts++; res.end('ok'); return }
+    if (url.pathname.endsWith('abortBooking')) { observed.aborts++; observed.abortAccounts.push(account); if (failedAbort) res.statusCode = 500; res.end('ok'); return }
     if (url.pathname === '/login') {
       const loggedIn = url.searchParams.get('username') === 'monitor@example.invalid' ? 'monitoring' : url.searchParams.get('username') === 'second@example.invalid' ? 'second' : 'booking'
       observed.logins.push(loggedIn)
       observed.loginCookies.push(req.headers.cookie || '')
       res.setHeader('Set-Cookie', `account=${loggedIn}; Path=/; HttpOnly`)
-      observed.loginAt = Date.now(); html = '<div class="main-informations">Connected</div>'
+      observed.loginAt = Date.now(); html = firstBookingLoginFailure && loggedIn === 'booking' && observed.logins.filter(value => value === 'booking').length > 1 ? '<div>Login failed</div>' : '<div class="main-informations">Connected</div>'
     }
     else if (url.searchParams.get('view') === 'start') html = '<button id="button_suivi_inscription">Login</button><form id="form-login" action="/login"><input id="username" name="username"><input id="password"><button>Connect</button></form>'
     else if (url.searchParams.get('page') === 'recherche') html = `<script>var tennis = ${JSON.stringify(catalog)};</script>
@@ -45,11 +46,11 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
       observed.searchAccounts.push(account)
       observed.searchTimes.push(Date.now())
       html = (sport === 'padel' ? padel && (account !== 'booking' || bookingPadel) && observed.searches.filter(value => value === 'padel').length > padelAfter : tennis)
-        ? `<div class="row tennis-court"><div class="price-description">${account !== 'booking' ? secondPrice : sport === 'padel' ? padelPrice : 'Gratuité'}<br>Couvert</div><a courtid="${ids[sport]}" datedeb="2026/09/21 20:00:00" href="/hold?sport=${sport}&hour=20">Book</a>${consecutive && secondAvailable ? `<a courtid="${ids[sport]}" datedeb="2026/09/21 21:00:00" href="/hold?sport=${sport}&hour=21">Book next hour</a>` : ''}</div>`
+        ? `<div class="row tennis-court"><div class="price-description">${account !== 'booking' ? secondPrice : sport === 'padel' ? padelPrice : 'Gratuité'}<br>Couvert</div>${firstAvailable ? `<a courtid="${ids[sport]}" datedeb="2026/09/21 20:00:00" href="/hold?sport=${sport}&hour=20">Book</a>` : ''}${consecutive && secondAvailable ? `<a courtid="${ids[sport]}" datedeb="2026/09/21 21:00:00" href="/hold?sport=${sport}&hour=21">Book next hour</a>` : ''}</div>`
         : '<div class="no-result">No slots</div>'
     } else if (url.pathname === '/hold' || url.pathname === '/partners') {
       if (url.pathname === '/hold') { observed.holds.push(sport); observed.holdAccounts.push(account); observed.holdHours.push(hour) }
-      html = brokenHold || (secondBrokenHold && hour === '21') ? '<div>Hold failed</div>' : `<div class="order-steps-infos"><h2>1 / 3 - Validation du court</h2></div>
+      html = brokenHold || (firstBrokenHold && hour === '20') || (secondBrokenHold && hour === '21') ? '<div>Hold failed</div>' : `<div class="order-steps-infos"><h2>1 / 3 - Validation du court</h2></div>
         <form action="/payment"><input type="hidden" name="hour" value="${hour}"><input type="hidden" name="sport" value="${sport}"><input name="player1"><input name="player1"><button>Continue</button></form>
         <button id="btnCancelBooking" onclick="fetch('/tennis/rest/abortBooking',{method:'POST'})">Cancel</button>`
     } else if (url.pathname === '/payment') {
@@ -61,12 +62,15 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
     } else if (url.pathname === '/confirm') {
       observed.paymentModes.push(url.searchParams.get('paymentMode'))
       observed.submissions.push(sport)
+      observed.submissionHours.push(hour)
+      if (hour === '21' && releaseFirstPayment) { observed.firstPaymentWaitedForSecond = true; releaseFirstPayment() }
       observed.submissionAccounts.push(account)
-      html = uncertainSubmit || (secondUncertain && hour === '21') ? '<div>No confirmation received</div>' : `<div class="confirmReservation">Confirmed</div><div class="address">${names[sport]}</div><div class="date">21/09/2026 à ${hour}h</div><div class="court">${sport} 1</div>`
+      html = uncertainSubmit || (firstUncertain && hour === '20') || (secondUncertain && hour === '21') ? '<div>No confirmation received</div>' : `<div class="confirmReservation">Confirmed</div><div class="address">${names[sport]}</div><div class="date">21/09/2026 à ${hour}h</div><div class="court">${sport} 1</div>`
     }
     if (url.pathname === '/results' && secondOtherCourt) html += `<div class="row tennis-court"><div class="price-description">Tarif plein<br>Couvert</div><a courtid="9999" datedeb="2026/09/21 21:00:00" href="/hold?sport=${sport}&hour=21">Other court</a></div>`
     if (url.pathname === '/results' && renderDelay) html = `<div id="loadingComponent">Loading</div><script>setTimeout(() => { document.body.innerHTML = ${JSON.stringify(html)} }, ${renderDelay})</script>`
     res.setHeader('Content-Type', 'text/html; charset=utf-8')
+    if (url.pathname === '/payment' && hour === '20' && overlap && !observed.submissionHours.includes('21')) { releaseFirstPayment = () => res.end(html); return }
     if (url.pathname === '/results' && searchDelay) setTimeout(() => res.end(html), searchDelay)
     else res.end(html)
   })
@@ -225,7 +229,7 @@ test('unavailable monitored courts never cause a login with the booking account'
 test('a tariff mismatch resumes monitoring without repeated booking logins on every poll', async t => {
   const result = await runFixture(t, { dualAccount: true, padelPrice: 'Tarif plein', tennis: false, polling: { intervalSeconds: 2, durationSeconds: 6 } })
   assert.equal(result.code, 0, result.output)
-  assert.deepEqual(result.logins, ['monitoring', 'booking', 'monitoring'])
+  assert.deepEqual([...result.logins].sort(), ['booking', 'monitoring', 'monitoring'])
   assert.equal(result.searchAccounts.filter(account => account === 'booking').length, 1)
   assert.deepEqual(result.holds, [])
   assert.deepEqual(result.outcomes, [])
@@ -233,14 +237,16 @@ test('a tariff mismatch resumes monitoring without repeated booking logins on ev
 
 
 test('two consecutive hours use each account tariff and its default guest, with separate ICS files', async t => {
-  const result = await runFixture(t, { consecutive: true })
+  const result = await runFixture(t, { consecutive: true, overlap: true })
   assert.equal(result.code, 0, result.output)
-  assert.deepEqual(result.holdHours, ['20', '21'])
-  assert.deepEqual(result.holdAccounts, ['booking', 'second'])
-  assert.deepEqual(result.loginCookies, ['', ''])
-  assert.deepEqual(result.partners.map(row => row.players), [['Player', 'Second'], ['Player', 'First']])
-  assert.deepEqual(result.paymentModes, [null, 'existingTicket'])
-  assert.deepEqual(result.legOutcomes.map(row => [row.leg, row.status]), [[0, 'submitted'], [0, 'confirmed'], [1, 'submitted'], [1, 'confirmed']])
+  assert.equal(result.firstPaymentWaitedForSecond, true)
+  assert.deepEqual(result.submissionHours, ['21', '20'])
+  assert.deepEqual([...result.holdHours].sort(), ['20', '21'])
+  assert.deepEqual([...result.holdAccounts].sort(), ['booking', 'second'])
+  assert.deepEqual(result.loginCookies, ['', '', ''])
+  assert.deepEqual(result.partners.toSorted((a, b) => a.hour.localeCompare(b.hour)).map(row => row.players), [['Player', 'Second'], ['Player', 'First']])
+  assert.deepEqual(result.paymentModes, ['existingTicket', null])
+  assert.deepEqual(result.legOutcomes.toSorted((a, b) => a.leg - b.leg).map(row => [row.leg, row.status]), [[0, 'submitted'], [0, 'confirmed'], [1, 'submitted'], [1, 'confirmed']])
   for (const [i, ics] of result.consecutiveIcs.entries()) {
     const expected = new Date(2026, 8, 21, 20 + i).toISOString().replace(/[-:]/g, '').replace('.000', '')
     assert.ok(ics.includes(`DTSTART:${expected}`), ics)
@@ -249,14 +255,14 @@ test('two consecutive hours use each account tariff and its default guest, with 
 test('second booking can share monitoring credentials but opens a fresh unguarded booking session', async t => {
   const result = await runFixture(t, { consecutive: true, dualAccount: true, secondMatchesMonitoring: true })
   assert.equal(result.code, 0, result.output)
-  assert.deepEqual(result.logins, ['monitoring', 'booking', 'monitoring'])
+  assert.deepEqual([...result.logins].sort(), ['booking', 'monitoring', 'monitoring'])
   assert.deepEqual(result.loginCookies, ['', '', ''])
-  assert.deepEqual(result.submissionAccounts, ['booking', 'monitoring'])
+  assert.deepEqual([...result.submissionAccounts].sort(), ['booking', 'monitoring'])
 })
 test('a consecutive dry-run cancels both holds without submitting either payment', async t => {
   const result = await runFixture(t, { consecutive: true, dryRun: true })
   assert.equal(result.code, 0, result.output)
-  assert.deepEqual(result.holdHours, ['20', '21'])
+  assert.deepEqual([...result.holdHours].sort(), ['20', '21'])
   assert.equal(result.aborts, 2)
   assert.deepEqual(result.submissions, [])
   assert.deepEqual(result.outcomes, ['dry-run-cancelled', 'dry-run-cancelled'])
@@ -266,15 +272,15 @@ test('missing next hour preserves the first reservation without a fallback or re
   assert.equal(result.code, 1, result.output)
   assert.deepEqual(result.submissionAccounts, ['booking'])
   assert.deepEqual(result.holdHours, ['20'])
-  assert.deepEqual(result.searches, ['padel', 'padel'])
+  assert.deepEqual(result.searches, ['padel', 'padel', 'padel'])
   assert.equal(result.aborts, 0)
   assert.match(result.output, /Consecutive booking incomplete/)
 })
 test('an uncertain second confirmation never cancels or retries the confirmed first hour', async t => {
   const result = await runFixture(t, { consecutive: true, secondUncertain: true })
   assert.equal(result.code, 1, result.output)
-  assert.deepEqual(result.holdHours, ['20', '21'])
-  assert.deepEqual(result.outcomes, ['submitted', 'confirmed', 'submitted'])
+  assert.deepEqual([...result.holdHours].sort(), ['20', '21'])
+  assert.deepEqual(result.legOutcomes.toSorted((a, b) => a.leg - b.leg).map(row => [row.leg, row.status]), [[0, 'submitted'], [0, 'confirmed'], [1, 'submitted']])
   assert.equal(result.aborts, 0)
 })
 test('second checkout failure releases only its hold and keeps the confirmed first hour', async t => {
@@ -287,12 +293,12 @@ test('consecutive fallback binds the second hour to the tennis court actually se
   const result = await runFixture(t, { consecutive: true, padel: false })
   assert.equal(result.code, 0, result.output)
   assert.deepEqual(result.submissions, ['tennis', 'tennis'])
-  assert.deepEqual(result.holdHours, ['20', '21'])
+  assert.deepEqual([...result.holdHours].sort(), ['20', '21'])
 })
 test('an explicit guest overrides only the first account default for this request', async t => {
   const result = await runFixture(t, { consecutive: true, explicitPlayers: [{firstName: 'Other', lastName: 'Guest'}] })
   assert.equal(result.code, 0, result.output)
-  assert.deepEqual(result.partners.map(row => row.players), [['Guest', 'Other'], ['Player', 'First']])
+  assert.deepEqual(result.partners.toSorted((a, b) => a.hour.localeCompare(b.hour)).map(row => row.players), [['Guest', 'Other'], ['Player', 'First']])
 })
 
 
@@ -307,9 +313,70 @@ test('the second account cannot use the first account free tariff', async t => {
   assert.equal(result.code, 1, result.output)
   assert.deepEqual(result.submissionAccounts, ['booking'])
 })
-test('no first reservation means no second account login or hold', async t => {
+test('no availability for either hour means no booking sessions or holds', async t => {
   const result = await runFixture(t, { consecutive: true, padel: false, tennis: false })
   assert.equal(result.code, 0, result.output)
   assert.deepEqual(result.logins, ['booking'])
   assert.deepEqual(result.holds, [])
+})
+
+
+test('only the second hour is available: reserve it without the first or a tennis fallback', async t => {
+  const result = await runFixture(t, { consecutive: true, firstAvailable: false })
+  assert.equal(result.code, 1, result.output)
+  assert.deepEqual(result.holdHours, ['21'])
+  assert.deepEqual(result.submissionAccounts, ['second'])
+  assert.deepEqual(result.searches, ['padel', 'padel', 'padel'])
+  assert.equal(result.aborts, 0)
+  assert.equal(result.consecutiveIcs[0], '')
+  assert.match(result.consecutiveIcs[1], /SUMMARY:Réservation Padel/)
+})
+test('first checkout failure releases only its hold while the second confirms independently', async t => {
+  const result = await runFixture(t, { consecutive: true, firstBrokenHold: true })
+  assert.equal(result.code, 1, result.output)
+  assert.deepEqual(result.submissionAccounts, ['second'])
+  assert.deepEqual(result.abortAccounts, ['booking'])
+  assert.match(result.consecutiveIcs[1], /SUMMARY:Réservation Padel/)
+})
+test('an uncertain first confirmation never cancels or blocks the confirmed second hour', async t => {
+  const result = await runFixture(t, { consecutive: true, firstUncertain: true, overlap: true })
+  assert.equal(result.code, 1, result.output)
+  assert.equal(result.firstPaymentWaitedForSecond, true)
+  assert.deepEqual(result.submissionHours, ['21', '20'])
+  assert.equal(result.aborts, 0)
+  assert.deepEqual(result.legOutcomes.toSorted((a, b) => a.leg - b.leg).map(row => [row.leg, row.status]), [[0, 'submitted'], [1, 'submitted'], [1, 'confirmed']])
+})
+test('a parallel dry-run with a first-leg failure still cancels the successful second hold', async t => {
+  const result = await runFixture(t, { consecutive: true, dryRun: true, firstBrokenHold: true })
+  assert.equal(result.code, 1, result.output)
+  assert.deepEqual(result.submissions, [])
+  assert.deepEqual([...result.abortAccounts].sort(), ['booking', 'second'])
+  assert.deepEqual(result.legOutcomes.map(row => [row.leg, row.status]), [[1, 'dry-run-cancelled']])
+})
+
+
+test('first booking login failure does not block the independently connected second account', async t => {
+  const result = await runFixture(t, { consecutive: true, firstBookingLoginFailure: true })
+  assert.equal(result.code, 1, result.output)
+  assert.deepEqual(result.submissionAccounts, ['second'])
+  assert.deepEqual(result.holdHours, ['21'])
+  assert.equal(result.aborts, 0)
+  assert.match(result.consecutiveIcs[1], /SUMMARY:Réservation Padel/)
+})
+test('unverified cleanup on one account cannot erase the other account confirmation', async t => {
+  const result = await runFixture(t, { consecutive: true, firstBrokenHold: true, failedAbort: true })
+  assert.equal(result.code, 1, result.output)
+  assert.deepEqual(result.submissionAccounts, ['second'])
+  assert.deepEqual(result.abortAccounts, ['booking'])
+  assert.deepEqual(result.legOutcomes.toSorted((a, b) => a.leg - b.leg).map(row => [row.leg, row.status]), [[0, 'cleanup-unverified'], [1, 'submitted'], [1, 'confirmed']])
+})
+test('parallel bookings share one polling window before the tennis fallback', async t => {
+  const result = await runFixture(t, { consecutive: true, dualAccount: true, padel: false, dryRun: true, polling: { intervalSeconds: 2, durationSeconds: 4 } })
+  assert.equal(result.code, 0, result.output)
+  assert.equal(result.searches.filter(sport => sport === 'tennis').length, 3)
+  assert.ok(result.searches.slice(0, -3).every(sport => sport === 'padel'))
+  assert.ok(result.searchTimes[result.searches.indexOf('tennis')] >= result.searchStart + 4000)
+  assert.deepEqual([...result.holdHours].sort(), ['20', '21'])
+  assert.equal(result.aborts, 2)
+  assert.deepEqual(result.submissions, [])
 })
