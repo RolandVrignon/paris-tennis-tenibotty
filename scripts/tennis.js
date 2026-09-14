@@ -24,7 +24,7 @@ try {
     const fixed = loadAccountConfig()
     const profile = resolveBookingProfile(fixed, option('--account'))
     assertBookingCredentials(profile)
-    options.config = { ...fixed, account: profile.account, priceType: profile.priceType }
+    options.config = { ...fixed, bookingAccount: profile.id, account: profile.account, priceType: profile.priceType }
   }
   let result
   if (resource === 'accounts' && command === 'list') {

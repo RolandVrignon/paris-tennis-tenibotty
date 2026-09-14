@@ -59,33 +59,44 @@ Avec Hermes, la demande devient une tentative ponctuelle sur ton VPS. Tu peux en
 
 ## Comptes nommés et partenaires habituels
 
-Chaque compte de réservation a son **nom**, ses identifiants, son **tarif** et ses **partenaires par défaut** dans `config.fixed.json`. Le compte principal reste dans `account` (identifiant `main`), les autres dans `bookingAccounts` (par exemple `second`). `monitoringAccount` conserve un bloc distinct, avec un `name` facultatif ; ses identifiants peuvent être les mêmes que ceux de `bookingAccounts.second`.
+Tous les comptes de réservation sont regroupés dans le tableau **`bookingAccounts`**, chacun avec son **nom unique**, ses identifiants, son tarif et ses partenaires par défaut. Il n’y a plus de compte séparé dans `account`, ni de clés `main`, `second` ou `third`. `monitoringAccount` reste un bloc distinct ; ses identifiants peuvent être les mêmes que ceux d’un compte de réservation.
 
 ```json
 {
-  "account": {
-    "name": "Roger Federer",
-    "email": "COMPTE_PRINCIPAL",
-    "password": "MOT_DE_PASSE",
-    "priceType": ["Gratuité"],
-    "defaultPlayers": [{"firstName": "Rafael", "lastName": "Nadal"}]
-  },
-  "bookingAccounts": {
-    "second": {
+  "bookingAccounts": [
+    {
+      "name": "Roger Federer",
+      "email": "COMPTE_ROGER",
+      "password": "MOT_DE_PASSE",
+      "priceType": ["Gratuité"],
+      "defaultPlayers": [{"firstName": "Rafael", "lastName": "Nadal"}]
+    },
+    {
       "name": "Rafael Nadal",
-      "email": "DEUXIEME_COMPTE",
+      "email": "COMPTE_RAFAEL",
       "password": "MOT_DE_PASSE",
       "priceType": ["Tarif plein"],
       "defaultPlayers": [{"firstName": "Roger", "lastName": "Federer"}]
     }
-  },
+  ],
   "monitoringAccount": {"name": "Monitoring", "email": "", "password": ""}
 }
 ```
 
-Remplace les identités d’exemple par les vrais joueurs. Le `priceType` historique à la racine reste accepté pour le compte principal ; `account.priceType` est prioritaire. Un compte payant nécessite toujours un **carnet compatible déjà crédité** : le bot n’achète pas de carnet.
+Remplace les identités d’exemple par les vrais joueurs. Pour ajouter un troisième ou quatrième compte, ajoute simplement un objet au tableau. Chaque compte possède son propre `priceType`. Un compte payant nécessite toujours un **carnet compatible déjà crédité** : le bot n’achète pas de carnet.
 
-Pour une demande, `bookingAccount` vaut `main` par défaut. Sans champ `players`, les partenaires du compte sont repris et enregistrés lors de la préparation. Un `players` explicite les remplace pour cette demande seulement. `players: []` est une erreur, pas une demande d’utiliser les valeurs par défaut.
+Dans une demande, `bookingAccount` contient le **nom du compte**, par exemple `"Roger Federer"`. Sans ce champ, le premier compte du tableau est choisi ; son nom est enregistré lors de la préparation pour qu’un changement d’ordre du tableau ne change pas le compte d’une demande programmée. Les noms doivent être uniques, sans distinction de casse ou d’espaces autour. Les accents et espaces internes sont acceptés. Si tu renommes un compte, adapte aussi ses demandes en attente ; un nom inconnu provoque une erreur, jamais un remplacement silencieux.
+
+Sans champ `players`, les partenaires du compte sont repris et enregistrés lors de la préparation. Un `players` explicite les remplace pour cette demande seulement. `players: []` est une erreur, pas une demande d’utiliser les valeurs par défaut.
+
+Pour migrer une ancienne configuration et les références de ses demandes en attente :
+
+```sh
+node scripts/migrate-booking-accounts.js
+node scripts/migrate-booking-accounts.js --apply
+```
+
+La première commande vérifie la migration sans écrire. La seconde crée une sauvegarde privée puis convertit `config.fixed.json`, `config.request.json` s’il existe et les demandes préparées ou programmées. Elle conserve leurs horaires, partenaires et choix de créneaux. L’ancien format reste lisible pour les installations non migrées. [Configuration complète d’exemple](config.fixed.json.sample).
 
 ### Deux heures consécutives, deux comptes
 
@@ -98,8 +109,8 @@ Pour une demande, `bookingAccount` vaut `main` par défaut. Sans champ `players`
   "locations": ["Edouard Pailleron"],
   "hours": ["20"],
   "courtType": ["Couvert"],
-  "bookingAccount": "main",
-  "consecutive": {"bookingAccount": "second"},
+  "bookingAccount": "Roger Federer",
+  "consecutive": {"bookingAccount": "Rafael Nadal"},
   "dryRun": true
 }
 ```
@@ -112,11 +123,11 @@ Le dry-run teste les deux parcours en parallèle et annule chaque pré-réservat
 
 ```sh
 node scripts/tennis.js accounts list
-node scripts/tennis.js reservations list --account second
-node scripts/tennis.js reservations cancel --account second --id <id>
+node scripts/tennis.js reservations list --account "Rafael Nadal"
+node scripts/tennis.js reservations cancel --account "Rafael Nadal" --id <id>
 ```
 
-`accounts list` expose seulement les identifiants courts, noms, tarifs, partenaires et l’état de configuration, jamais les identifiants de connexion. Utilise le même `--account` pour la consultation, l’aperçu et la confirmation d’annulation. [Configuration complète d’exemple](config.fixed.json.sample).
+`accounts list` expose seulement les noms (également retournés dans `id` pour compatibilité), tarifs, partenaires et l’état de configuration, jamais les identifiants de connexion. Utilise le même `--account` pour la consultation, l’aperçu et la confirmation d’annulation. [Configuration complète d’exemple](config.fixed.json.sample).
 
 <a id="telegram"></a>
 ## Parle tennis, pas commandes
@@ -292,7 +303,7 @@ Sans `polling`, le parcours reste un seul passage. `fallbackMode: "each-cycle"` 
 
 ## Compte de monitoring optionnel
 
-Dans `config.fixed.json`, le bloc `account` reste le compte qui réserve. Ajouter un second bloc pour les observations :
+Dans `config.fixed.json`, les comptes qui réservent restent dans `bookingAccounts`. Ajouter un bloc séparé pour les observations :
 
 ```json
 "monitoringAccount": {
@@ -301,13 +312,13 @@ Dans `config.fixed.json`, le bloc `account` reste le compte qui réserve. Ajoute
 }
 ```
 
-- Bloc absent ou entièrement vide : le compte principal est utilisé, comme auparavant.
-- Bloc complet : le monitoring et les recherches répétées utilisent le second compte. À la détection d’un créneau compatible, sa session navigateur est fermée ; une session distincte se connecte au compte principal et refait la recherche avant toute sélection.
-- Bloc incomplet ou connexion refusée : une erreur est signalée ; le script ne remplace pas discrètement le compte configuré par le principal.
+- Bloc absent ou entièrement vide : le compte choisi pour réserver est utilisé (le premier du tableau pour le monitoring autonome).
+- Bloc complet : le monitoring et les recherches répétées utilisent `monitoringAccount`. À la détection d’un créneau compatible, sa session navigateur est fermée ; une session distincte se connecte au compte choisi pour réserver et refait la recherche avant toute sélection.
+- Bloc incomplet ou connexion refusée : une erreur est signalée ; le script ne remplace pas discrètement le compte configuré par un autre compte.
 
-La Gratuité et les autres tarifs sont vérifiés avec le compte qui réserve, car les droits des deux comptes peuvent différer. Si le créneau a disparu ou n’est pas compatible avec le compte principal, les recherches reprennent avec le compte de monitoring ; ces mêmes créneaux ne déclenchent pas une nouvelle connexion au principal avant trente secondes. Les replis padel → tennis et le dry-run conservent cette séparation.
+Si le compte de monitoring et le compte choisi pour réserver ont la même adresse, une seule identité est utilisée pour ce parcours. La Gratuité et les autres tarifs sont vérifiés avec le compte qui réserve, car les droits des deux comptes peuvent différer. Si le créneau a disparu ou n’est pas compatible avec le compte principal, les recherches reprennent avec le compte de monitoring ; ces mêmes créneaux ne déclenchent pas une nouvelle connexion au principal avant trente secondes. Les replis padel → tennis et le dry-run conservent cette séparation.
 
-Le monitoring autonome de Jules Ladoumègue utilise aussi ce bloc. Son rapport indique `monitoring` ou `booking` pour préciser le compte employé, sans exposer ses identifiants. Les commandes de liste et d’annulation des réservations utilisent toujours `account`. Le bloc fonctionne aussi dans l’ancien `config.json` ; ne jamais commiter ces fichiers privés.
+Le monitoring autonome de Jules Ladoumègue utilise aussi ce bloc. Son rapport indique `monitoring` ou `booking` pour préciser le compte employé, sans exposer ses identifiants. Les commandes de liste et d’annulation utilisent le compte choisi par `--account "Nom"`, ou le premier compte du tableau si ce paramètre est absent. Le bloc fonctionne aussi dans l’ancien `config.json` ; ne jamais commiter ces fichiers privés.
 
 ## Mesurer l’heure d’apparition des créneaux
 

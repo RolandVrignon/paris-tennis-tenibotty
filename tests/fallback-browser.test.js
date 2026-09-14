@@ -16,7 +16,7 @@ const catalog = { features: Object.entries(names).map(([sport, name], i) => ({ p
 } })) }
 
 // Exercise the real entry point against a local site, with no account or network service.
-const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brokenHold = false, uncertainSubmit = false, padelPrice = 'Gratuité', polling, padelAfter = 0, searchDelay = 0, renderDelay = 0, startDelay = 0, dualAccount = false, bookingPadel = true, consecutive = false, secondAvailable = true, secondUncertain = false, secondBrokenHold = false, explicitPlayers, secondMatchesMonitoring = false, secondOtherCourt = false, secondPrice = 'Tarif plein', firstAvailable = true, firstBrokenHold = false, firstUncertain = false, overlap = false, firstBookingLoginFailure = false, failedAbort = false } = {}) => {
+const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brokenHold = false, uncertainSubmit = false, padelPrice = 'Gratuité', polling, padelAfter = 0, searchDelay = 0, renderDelay = 0, startDelay = 0, dualAccount = false, bookingPadel = true, consecutive = false, secondAvailable = true, secondUncertain = false, secondBrokenHold = false, explicitPlayers, secondMatchesMonitoring = false, secondOtherCourt = false, secondPrice = 'Tarif plein', firstAvailable = true, firstBrokenHold = false, firstUncertain = false, overlap = false, firstBookingLoginFailure = false, failedAbort = false, accountArray = false } = {}) => {
   const root = mkdtempSync(join(tmpdir(), 'tennis-browser-fallback-'))
   const observed = { searches: [], holds: [], submissions: [], aborts: 0, searchTimes: [], loginAt: null, logins: [], loginCookies: [], searchAccounts: [], holdAccounts: [], submissionAccounts: [], holdHours: [], partners: [], paymentModes: [], abortAccounts: [], submissionHours: [], firstPaymentWaitedForSecond: false }
   let releaseFirstPayment
@@ -94,6 +94,18 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
     sport: 'padel', date: '21/09/2026', locations: [names.padel], hours: ['20'], courtType: ['Couvert'], priceType: ['Gratuité'],
     players: explicitPlayers || (consecutive ? undefined : [{ firstName: 'Test', lastName: 'Partner' }]), polling, fallbacks: [{ sport: 'tennis', locations: [names.tennis] }],
   }))
+  if (accountArray) {
+    const stored = JSON.parse(readFileSync(configPath, 'utf8'))
+    stored.bookingAccounts = [
+      { ...stored.account, name: 'Roger Federer', priceType: stored.priceType },
+      { ...stored.bookingAccounts.second, name: 'Rafael Nadal' },
+      { name: 'Joueur invité', email: '', password: '', priceType: ['Tarif réduit'], defaultPlayers: [] },
+    ]
+    delete stored.account
+    delete stored.priceType
+    if (stored.consecutive) stored.consecutive.bookingAccount = 'Rafael Nadal'
+    writeFileSync(configPath, JSON.stringify(stored))
+  }
   const searchStart = Date.now() + startDelay
   const child = fork(join(root, 'index.mjs'), dryRun ? ['--dry-run'] : [], {
     cwd: root, silent: true, env: { ...process.env, TENNIS_CONFIG_PATH: configPath, NTFY_TOPIC: '', GITHUB_ACTIONS: '', TENNIS_SEARCH_START_AT: new Date(searchStart).toISOString() },
@@ -379,4 +391,28 @@ test('parallel bookings share one polling window before the tennis fallback', as
   assert.deepEqual([...result.holdHours].sort(), ['20', '21'])
   assert.equal(result.aborts, 2)
   assert.deepEqual(result.submissions, [])
+})
+
+
+test('array accounts book in parallel by name with the implicit first account snapshotted', async t => {
+  const result = await runFixture(t, { accountArray: true, consecutive: true, overlap: true, dualAccount: true })
+  assert.equal(result.code, 0, result.output)
+  assert.equal(result.firstPaymentWaitedForSecond, true)
+  assert.deepEqual([...new Set(result.legOutcomes.map(row => row.accountId))].sort(), ['Rafael Nadal', 'Roger Federer'])
+  assert.deepEqual(result.submissionHours, ['21', '20'])
+  assert.equal(result.aborts, 0)
+})
+test('array accounts preserve second-only success and independent dry-run cleanup', async t => {
+  const result = await runFixture(t, { accountArray: true, consecutive: true, dryRun: true, firstAvailable: false })
+  assert.equal(result.code, 1, result.output)
+  assert.deepEqual(result.holdHours, ['21'])
+  assert.deepEqual(result.submissions, [])
+  assert.deepEqual(result.abortAccounts, ['second'])
+  assert.deepEqual(result.legOutcomes.map(row => [row.accountId, row.status]), [['Rafael Nadal', 'dry-run-cancelled']])
+})
+test('array accounts also work for a single booking with no legacy root account', async t => {
+  const result = await runFixture(t, { accountArray: true, dryRun: true })
+  assert.equal(result.code, 0, result.output)
+  assert.deepEqual(result.holdAccounts, ['booking'])
+  assert.equal(result.aborts, 1)
 })

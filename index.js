@@ -285,7 +285,7 @@ const bookTennis = async (config, { leg = 0, targetsOverride, searchStartOverrid
 
 const release = process.send ? () => {} : acquireOperationLock(bookingJobOptions().stateDirectory)
 try {
-  config.account = { ...config.account, email: config.account?.email || process.env.ACCOUNT_EMAIL, password: config.account?.password || process.env.ACCOUNT_PASSWORD }
+  if (!Array.isArray(config.bookingAccounts)) config.account = { ...config.account, email: config.account?.email || process.env.ACCOUNT_EMAIL, password: config.account?.password || process.env.ACCOUNT_PASSWORD }
   const request = Object.fromEntries(VARIABLE_CONFIG_KEYS.filter(key => Object.hasOwn(config, key)).map(key => [key, config[key]]))
   request.date ||= dayjs().add(6, 'days').format('DD/MM/YYYY')
   const fullConfig = buildBookingConfig(config, request)

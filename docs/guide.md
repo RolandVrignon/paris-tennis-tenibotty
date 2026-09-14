@@ -80,11 +80,13 @@ Les comptes nommés, partenaires par défaut et demandes de deux heures sont dé
 
 ```json
 {
-  "account": {
+  "bookingAccounts": [{
+    "name": "Roger Federer",
     "email": "votre-adresse@example.com",
-    "password": "VOTRE_MOT_DE_PASSE"
-  },
-  "priceType": ["Gratuité"],
+    "password": "VOTRE_MOT_DE_PASSE",
+    "priceType": ["Gratuité"],
+    "defaultPlayers": [{"firstName": "Rafael", "lastName": "Nadal"}]
+  }],
   "ai": {
     "enable": true,
     "space": "Nischay103/captcha_recognition",
@@ -141,8 +143,8 @@ Plusieurs valeurs peuvent être acceptées, mais leur ordre ne définit pas une 
 | `hours` | Heures par ordre de préférence, par exemple `["18", "19"]`. |
 | `courtType` | `Couvert`, `Découvert`, ou les deux. |
 | `players` | Un à trois partenaires ; facultatif si le compte sélectionné possède `defaultPlayers`. Une valeur explicite remplace ce défaut. |
-| `bookingAccount` | Identifiant du compte configuré : `main` par défaut, ou une clé de `bookingAccounts`. |
-| `consecutive` | `{ "bookingAccount": "second" }` lance les deux heures en parallèle dans deux Chromium distincts, sur le même terrain ; `players` peut y remplacer les partenaires par défaut du second compte. Toute heure confirmée est conservée, y compris la deuxième seule. |
+| `bookingAccount` | Nom unique du compte dans le tableau `bookingAccounts`. Le premier est choisi par défaut puis son nom est enregistré dans la demande. |
+| `consecutive` | `{ "bookingAccount": "Rafael Nadal" }` lance les deux heures en parallèle dans deux Chromium distincts, sur le même terrain ; `players` peut y remplacer les partenaires par défaut du second compte. Toute heure confirmée est conservée, y compris la deuxième seule. |
 
 Le script parcourt d’abord les clubs dans l’ordre, puis les heures demandées dans chaque club. Pour limiter les courts d’un club, remplacer le tableau `locations` par un objet :
 
@@ -628,12 +630,12 @@ Une transition vide → créneaux permet d’encadrer l’apparition observée, 
 
 ## Séparer le compte de monitoring du compte de réservation
 
-`config.fixed.json` accepte le bloc optionnel `monitoringAccount: { "email": "...", "password": "..." }`. L’exemple versionné contient un bloc vide. Le compte principal reste dans `account` : il sert aux réservations, à leur consultation et à leur annulation. Les paramètres variables, les requêtes Hermes et les replis ne peuvent pas remplacer ces identifiants.
+`config.fixed.json` accepte le bloc optionnel `monitoringAccount: { "email": "...", "password": "..." }`. L’exemple versionné contient un bloc vide. Tous les comptes de réservation sont dans le tableau `bookingAccounts`. Le compte choisi par son nom sert aux réservations, à leur consultation et à leur annulation ; sans choix explicite, le premier du tableau est utilisé. Les paramètres variables, les requêtes Hermes et les replis ne peuvent pas remplacer ces identifiants.
 
-Si `monitoringAccount` est absent, nul ou entièrement vide, tous les parcours conservent le compte principal. S’il est renseigné, les deux valeurs sont obligatoires et l’adresse doit différer de celle du compte principal. Une configuration partielle ou un échec d’authentification du compte configuré arrête l’opération ; il n’y a pas de bascule silencieuse vers les identifiants principaux.
+Si `monitoringAccount` est absent, nul ou entièrement vide, le compte choisi pour réserver est utilisé ; le monitoring autonome prend le premier compte du tableau. S’il est renseigné, les deux valeurs sont obligatoires. Dans le format tableau, il peut partager les identifiants d’un compte de réservation ; si ce compte est sélectionné, le parcours utilise directement cette identité. Une configuration partielle ou un échec d’authentification du compte configuré arrête l’opération ; il n’y a pas de bascule silencieuse vers les identifiants principaux.
 
-Au lancement programmé, le navigateur se connecte au compte de monitoring et attend l’ouverture prévue. Les recherches répétées et les détections de replis restent sur ce compte. Une disponibilité aux heures, pistes et types de terrain demandés déclenche la fermeture de ce contexte navigateur, puis une connexion dans un contexte neuf avec le compte principal. Le script refait la recherche et vérifie le tarif du principal avant de sélectionner un créneau. Aucune donnée de formulaire ni aucun cookie de monitoring n’est réutilisé pour réserver.
+Au lancement programmé, le navigateur se connecte au compte de monitoring et attend l’ouverture prévue. Les recherches répétées et les détections de replis restent sur ce compte. Une disponibilité aux heures, pistes et types de terrain demandés déclenche la fermeture de ce contexte navigateur, puis une connexion dans un contexte neuf avec le compte choisi pour réserver. Le script refait la recherche et vérifie son tarif avant de sélectionner un créneau. Aucune donnée de formulaire ni aucun cookie de monitoring n’est réutilisé pour réserver.
 
 Si la seconde recherche ne trouve plus de créneau compatible, le script revient au compte de monitoring. Un délai de trente secondes par créneau évite de reconnecter le principal à chaque relevé identique ; la limite initiale de recherche reste applicable. Après sélection, une erreur de checkout arrête la tâche comme auparavant. Les tests dry-run utilisent également le principal pour la sélection et l’annulation temporaire.
 
-`availability:monitor` choisit automatiquement le second compte lorsqu’il existe et n’effectue jamais de bascule pour réserver. `--check` annonce le rôle choisi ; le rapport conserve `accountRole` sans adresse ni mot de passe. Les fichiers fixes sont lus au lancement : compléter le bloc sur le VPS avant le démarrage du cron. Il est aussi accepté dans le fichier historique `config.json`.
+`availability:monitor` choisit automatiquement `monitoringAccount` lorsqu’il est renseigné et n’effectue jamais de bascule pour réserver. `--check` annonce le rôle choisi ; le rapport conserve `accountRole` sans adresse ni mot de passe. Les fichiers fixes sont lus au lancement : compléter le bloc sur le VPS avant le démarrage du cron. Il est aussi accepté dans le fichier historique `config.json`.
