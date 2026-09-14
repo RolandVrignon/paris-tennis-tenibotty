@@ -206,7 +206,7 @@ Deux fichiers séparent ce qui reste stable de ce qui change à chaque match :
 | Fichier privé | Contenu |
 | --- | --- |
 | `config.fixed.json` | Compte Paris Tennis, tarifs acceptés, reconnaissance CAPTCHA et notifications. |
-| `config.request.json` | Date, clubs, horaires, types de courts et partenaires. |
+| `config.request.json` | Fichier unique des préférences : sport, date, clubs, horaires, partenaires et replis tennis/padel. |
 
 Exemple de demande — **remplace la date et le partenaire avant de lancer** :
 
@@ -248,14 +248,24 @@ Le padel municipal de [Jules Ladoumègue](https://tennis.paris.fr/tennis/#PadelJ
 
 Le mode padel sélectionne uniquement les pistes identifiées comme padel dans le catalogue officiel. Les anciens courts de tennis encore présents sur la fiche sont exclus, même si leurs numéros se recoupent. Le script accepte **un à trois partenaires, en plus du titulaire du compte**, comme pour le tennis. Il n’impose pas trois partenaires pour accéder au checkout.
 
-```sh
-cp -n config.padel.json.sample config.padel.json
-chmod 600 config.padel.json
-# Renseigner au moins un partenaire, les heures et éventuellement la date.
-TENNIS_REQUEST_CONFIG_PATH=./config.padel.json npm run start-dry-headed
+Pour le padel, renseigner le même `config.request.json` que pour le tennis :
+
+```json
+{
+  "sport": "padel",
+  "locations": {"Padel Jules Ladoumègue": [1, 2, 3, 4]},
+  "hours": ["20"],
+  "courtType": ["Couvert"]
+}
 ```
 
-Les paramètres fixes du compte et le tarif restent dans `config.fixed.json`. Le fichier d’exemple utilise `Couvert`, libellé actuellement affiché sur les créneaux padel du site. Pour le lancement direct, l’absence de date signifie J+6. Pour Hermes, fournir une date explicite et demander par exemple « Programme une réservation de padel à Jules Ladoumègue avec mon partenaire ».
+Cet exemple reprend les partenaires par défaut du compte sélectionné. Ajouter `players` pour les remplacer. Pour essayer ensuite le tennis, ajouter `fallbacks` comme dans l’exemple ci-dessous ou utiliser [config.request.json.sample](config.request.json.sample), qui regroupe les deux sports.
+
+```sh
+npm run start-dry-headed
+```
+
+Aucun fichier de préférences séparé par sport n’est nécessaire. Les paramètres fixes du compte et le tarif restent dans `config.fixed.json`. Le fichier d’exemple utilise `Couvert`, libellé actuellement affiché sur les créneaux padel du site. Pour le lancement direct, l’absence de date signifie J+6. Pour Hermes, fournir une date explicite et demander par exemple « Programme une réservation de padel à Jules Ladoumègue avec mon partenaire ».
 
 Le compte gratuit conserve `"priceType": ["Gratuité"]`. Pour un tarif payant, conserver le tarif autorisé et un carnet compatible ; aucun achat automatique de carnet n’est ajouté. Les confirmations, annulations, notifications et fichiers ICS utilisent le même moteur.
 

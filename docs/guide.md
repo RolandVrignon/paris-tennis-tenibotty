@@ -205,16 +205,15 @@ Le gestionnaire enregistre les identifiants et libellés vérifiés dans la dema
 
 ## Padel municipal
 
-Utiliser [config.padel.json.sample](../config.padel.json.sample) comme modèle de préférences, avec `sport: "padel"`, le club exact `Padel Jules Ladoumègue` et **un à trois partenaires**. Les quatre pistes portent les numéros 1 à 4 ; leur sélection repose sur les identifiants officiels pour exclure les anciens courts de tennis présents sur la même fiche. Le sport est conservé dans les demandes Hermes et leur configuration temporaire.
+Utiliser le fichier unique `config.request.json`, à partir de [config.request.json.sample](../config.request.json.sample), avec `sport: "padel"`, le club exact `Padel Jules Ladoumègue` et **un à trois partenaires**. Les quatre pistes portent les numéros 1 à 4 ; leur sélection repose sur les identifiants officiels pour exclure les anciens courts de tennis présents sur la même fiche. Le sport est conservé dans les demandes Hermes et leur configuration temporaire.
+
+Le modèle commun propose le padel à 20 h, puis le tennis à Pailleron en repli. Ajuster `sport`, `locations`, `hours` et `fallbacks` dans `config.request.json` ; supprimer `fallbacks` pour chercher uniquement le sport principal. Il reprend les partenaires par défaut du compte, sauf si `players` est renseigné. Il n’impose pas de date : le lancement direct vise J+6, tandis qu’une demande Hermes exige une date explicite.
 
 ```sh
-cp -n config.padel.json.sample config.padel.json
-chmod 600 config.padel.json
-# Renseigner les vrais partenaires et les heures avant le test.
-TENNIS_REQUEST_CONFIG_PATH=./config.padel.json npm run start-dry-headed
+npm run start-dry-headed
 ```
 
-`config.padel.json` est ignoré par Git. Le compte, le tarif et les notifications restent dans `config.fixed.json`. Les créneaux padel consultés sur le site portent le type `Couvert` et proposent `Gratuité` pour un compte éligible. Les parcours payants conservent l’exigence d’un carnet compatible. Le programme ne modifie pas les droits du compte.
+`config.request.json` est ignoré par Git et sert aux deux sports. Le compte, le tarif et les notifications restent dans `config.fixed.json`. Les créneaux padel consultés sur le site portent le type `Couvert` et proposent `Gratuité` pour un compte éligible. Les parcours payants conservent l’exigence d’un carnet compatible. Le programme ne modifie pas les droits du compte.
 
 Pour une demande programmée, ajouter une date explicite et utiliser le même fichier variable avec `booking:manage prepare --input`. Pour un dry-run Hermes, ajouter le booléen `dryRun: true` ; pour un dry-run direct, utiliser la commande dédiée. Sans `sport`, les demandes existantes restent en tennis. Un club nommé Padel avec le mode tennis est refusé pour éviter une confusion.
 
