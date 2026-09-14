@@ -271,6 +271,22 @@ npm run reservations:list
 
 ## Consulter et annuler une réservation
 
+### Lire les crédits horaires par profil
+
+```sh
+npm run credits:list
+npm run credits:list -- --account "Rafael Nadal"
+npm run credits:list -- --all
+```
+
+La lecture utilise la page **Mon profil → Carnet de réservation** et les identifiants propres à chaque compte de `bookingAccounts`, jamais le compte de monitoring. Sans sélection, le premier compte est utilisé. `--account` et `--all` sont exclusifs ; `--headed` permet une connexion en navigateur visible.
+
+La sortie JSON contient `source` et `accounts`. Chaque profil expose `id`, `name`, `priceType`, `status`. En cas de succès, `fetchedAt` date la lecture, `requiresCredits` reflète le tarif configuré et `balances` contient les soldes `{label, priceType, courtType, hours}`. Exemple : `{"label":"Tarif plein - Court couvert","priceType":"Tarif plein","courtType":"Couvert","hours":5}`. Les lignes d’achat et de recrédit sont déjà comprises dans ce total. Aucun total global ne mélange les différents types de carnets.
+
+`balances: []` signifie que le site indique explicitement l’absence de carnet. Pour la gratuité, cela ne bloque pas la réservation et ne renseigne pas le quota hebdomadaire. Le solde d’un carnet n’assure ni la disponibilité d’un créneau ni sa compatibilité au checkout.
+
+Une erreur de lecture produit `status: "error"` et `error`, sans champ `balances`. Avec `--all`, les autres profils sont tout de même consultés ; le processus termine avec le code 1 si au moins une lecture échoue. Cette commande ne sélectionne aucun créneau, n’achète aucun carnet et ne modifie aucune réservation.
+
 ### Lire le compte
 
 ```sh

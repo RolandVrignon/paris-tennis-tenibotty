@@ -431,11 +431,17 @@ Le lanceur utilise `flock` sous Linux pour sérialiser les opérations. Les iden
 | Tester sans fenêtre | `npm run start-dry` | Même test en headless. |
 | **Réserver maintenant** | `npm start` | **Confirme une réservation réelle** si un créneau compatible est trouvé. |
 | Consulter le compte | `npm run reservations:list` | Lit la réservation courante sur Paris Tennis. |
+| Lire les crédits d’un profil | `npm run credits:list -- --account "Rafael Nadal"` | Lit les heures restantes par tarif et type de court. |
+| Lire tous les carnets | `npm run credits:list -- --all` | Consulte chaque compte de réservation séparément. |
 | Prévisualiser une annulation | `npm run reservations:cancel -- --id 'ID'` | Vérifie la réservation sans soumettre l’annulation. |
 | **Annuler réellement** | `npm run reservations:cancel -- --id 'ID' --confirm` | **Soumet l’annulation** de la réservation identifiée et vérifie le résultat. |
 | Voir les demandes futures | `npm run booking:list` | Affiche les demandes gérées par le helper Hermes. |
 
 Pour annuler, utilise l’ID renvoyé par `reservations:list`. C’est une référence locale des détails affichés, pas un numéro de confirmation Paris Tennis. La consultation actuelle ne constitue pas un historique complet du compte.
+
+La commande `credits:list` lit **Mon profil → Carnet de réservation**, sans réserver ni consommer d’heure. Sans option, elle consulte le premier compte ; `--account` sélectionne un nom de `bookingAccounts`, et `--all` consulte tous les profils. Par exemple, « Tarif plein - Court couvert : 5 h » devient un solde de **5 h**, sans additionner à nouveau les achats et recrédits détaillés. Les carnets couvert/découvert et plein/réduit restent séparés : leurs heures ne sont pas interchangeables automatiquement.
+
+Un profil gratuit n’a pas besoin de carnet. L’absence de carnet n’indique pas son quota de réservations. En cas de connexion impossible, CAPTCHA ou page inconnue, le résultat indique une erreur et aucun solde supposé. Avec Hermes, demande par exemple : « Combien d’heures reste-t-il sur chaque profil ? ».
 
 [Gestion des réservations](docs/guide.md#consulter-et-annuler-une-réservation) · [Statuts et demandes futures](docs/guide.md#comprendre-les-statuts)
 

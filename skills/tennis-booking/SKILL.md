@@ -1,6 +1,6 @@
 ---
 name: tennis-booking
-description: Find official Paris Tennis clubs, inspect or cancel account reservations, and manage one-time tennis or padel booking requests from Hermes or Telegram using the repository CLI.
+description: Find official Paris Tennis clubs, read hourly credits per account, inspect or cancel account reservations, and manage one-time tennis or padel booking requests from Hermes or Telegram using the repository CLI.
 ---
 
 # Paris Tennis
@@ -39,6 +39,21 @@ For repeated opening-time searches, add request-level `polling: {"intervalSecond
 The user prefers padel searches throughout the window, then one tennis fallback sweep: use `after-window`. Each search waits for its response and rendered slots or explicit empty results; the next starts no sooner than two seconds after the previous start and never overlaps it. A late opening at 08:00:30 can therefore be found. The final fallback sweep and checkout can finish after 08:10. Use `each-cycle` only when the user explicitly wants to accept a fallback during the window.
 
 On window expiration, the request records `openingReviewRequired: true` and the Hermes result includes an opening-review message, even if the fallback succeeds. Use the timestamped log to investigate; empty results do not prove that the opening rule is wrong. Do not silently change the schedule or claim monitoring has been reconfigured. No new monitoring task is automatically created by this flag. CAPTCHA and checkout errors still stop the attempt; never repeat a submitted reservation.
+
+## Hourly credits per booking profile
+
+For remaining hours or ticket-book balances, run:
+
+```sh
+node '{{PROJECT_DIR}}/scripts/tennis.js' credits list --account 'Rafael Nadal'
+node '{{PROJECT_DIR}}/scripts/tennis.js' credits list --all
+```
+
+Resolve the actual profile name using `accounts list`; the names above are fictional examples. Without an option, the command reads the first booking account. `--all` and `--account` are mutually exclusive. Each profile uses its own authenticated session, never the monitoring account's session. This is read-only and requires no booking, payment or cancellation.
+
+Show each account's `balances` with tariff, court type and remaining `hours`, and the `fetchedAt` timestamp. A 5 h panel total already includes its purchase/recredit details: never add those details again. Do not combine covered/uncovered or reduced/full-price books into interchangeable hours. An empty balance list means the site explicitly reports no carnet; a free profile does not require one. Credits do not establish weekly quota, available slots or checkout eligibility.
+
+On `status: "error"`, report an unread balance, never zero. `--all` preserves successful readings even when another profile fails; exit code 1 signals at least one failure. Do not expose credentials or infer balances from configured tariffs. Use this command when the user asks how many hours remain, rather than launching a dry-run or booking.
 
 ## Reservations already on the account
 
