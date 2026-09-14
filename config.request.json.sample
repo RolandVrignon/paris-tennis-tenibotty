@@ -1,25 +1,17 @@
 {
-  "sport": "padel",
-  "locations": {
-    "Padel Jules Ladoumègue": [
-      1,
-      2,
-      3,
-      4
-    ]
-  },
+  "sport": "tennis",
+  "locations": [
+    "Valeyre",
+    "Suzanne Lenglen"
+  ],
   "hours": [
-    "20"
+    "18"
   ],
   "courtType": [
     "Couvert"
   ],
-  "fallbacks": [
-    {
-      "sport": "tennis",
-      "locations": [
-        "Edouard Pailleron"
-      ]
-    }
-  ]
+  "bookingAccount": "Roger Federer",
+  "consecutive": {
+    "bookingAccount": "Rafael Nadal"
+  }
 }

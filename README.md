@@ -259,7 +259,7 @@ Pour le padel, renseigner le même `config.request.json` que pour le tennis :
 }
 ```
 
-Cet exemple reprend les partenaires par défaut du compte sélectionné. Ajouter `players` pour les remplacer. Pour essayer ensuite le tennis, ajouter `fallbacks` comme dans l’exemple ci-dessous ou utiliser [config.request.json.sample](config.request.json.sample), qui regroupe les deux sports.
+Cet exemple reprend les partenaires par défaut du compte sélectionné. Ajouter `players` pour les remplacer. Pour essayer ensuite le tennis, ajouter `fallbacks` comme dans l’exemple ci-dessous. Le [modèle public](config.request.json.sample) illustre deux heures de tennis à Valeyre, puis Suzanne Lenglen en second choix, avec Roger Federer et Rafael Nadal ; adapter les clubs et les comptes à ses besoins.
 
 ```sh
 npm run start-dry-headed

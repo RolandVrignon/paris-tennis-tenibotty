@@ -207,7 +207,7 @@ Le gestionnaire enregistre les identifiants et libellés vérifiés dans la dema
 
 Utiliser le fichier unique `config.request.json`, à partir de [config.request.json.sample](../config.request.json.sample), avec `sport: "padel"`, le club exact `Padel Jules Ladoumègue` et **un à trois partenaires**. Les quatre pistes portent les numéros 1 à 4 ; leur sélection repose sur les identifiants officiels pour exclure les anciens courts de tennis présents sur la même fiche. Le sport est conservé dans les demandes Hermes et leur configuration temporaire.
 
-Le modèle commun propose le padel à 20 h, puis le tennis à Pailleron en repli. Ajuster `sport`, `locations`, `hours` et `fallbacks` dans `config.request.json` ; supprimer `fallbacks` pour chercher uniquement le sport principal. Il reprend les partenaires par défaut du compte, sauf si `players` est renseigné. Il n’impose pas de date : le lancement direct vise J+6, tandis qu’une demande Hermes exige une date explicite.
+Le modèle public propose deux heures de tennis, de 18 h à 20 h, à Valeyre ou, en second choix, Suzanne Lenglen : la première heure avec Roger Federer et la seconde avec Rafael Nadal. Pour une seule heure de padel, retirer `consecutive` et adapter les comptes et les clubs. Ajuster `sport`, `locations`, `hours` et `fallbacks` dans `config.request.json` ; supprimer `fallbacks` pour chercher uniquement le sport principal. Il reprend les partenaires par défaut du compte, sauf si `players` est renseigné. Il n’impose pas de date : le lancement direct vise J+6, tandis qu’une demande Hermes exige une date explicite.
 
 ```sh
 npm run start-dry-headed
