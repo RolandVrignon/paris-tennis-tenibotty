@@ -55,6 +55,28 @@ Show each account's `balances` with tariff, court type and remaining `hours`, an
 
 On `status: "error"`, report an unread balance, never zero. `--all` preserves successful readings even when another profile fails; exit code 1 signals at least one failure. Do not expose credentials or infer balances from configured tariffs. Use this command when the user asks how many hours remain, rather than launching a dry-run or booking.
 
+### Required credit checks for booking requests
+
+At the time of every new booking request, and after an edit changes accounts, tariffs or court choices, read fresh credits for each selected paid booking profile with `credits list --account '<exact name>'`. Resolve the default first account too; include `consecutive.bookingAccount` when present. Skip profiles configured for `Gratuité`; they do not need a carnet. Do not query unrelated profiles or the monitoring account.
+
+For each paid account, require at least **1 h** in a balance matching both its configured `Tarif plein`/`Tarif réduit` and the requested court type. Two consecutive hours use one hour from each of the two accounts, not two hours from either account. Compare every primary/fallback court-type choice separately: alternatives do not consume cumulative credits, and a funded fallback does not make an unfunded primary choice funded. Report which choices have compatible credit and which do not. Never count reduced credits toward a full-price booking, or uncovered hours toward a covered court. If the site offers a conversion, only the native checkout can establish it; do not infer one here.
+
+Include the live balance and the check time in the request summary. If credit is missing/insufficient, warn immediately: `⚠️ <profile> : <available> h en <tariff> / <court type>, 1 h nécessaire pour la tentative du <date/time>. Recharge le carnet compatible avant cette tentative.` If the read fails, warn that the balance could not be verified; do not label it zero. This is an advisory check: preserve the user's authorized booking schedule and successful other-hour reservation. Never purchase credits, change accounts/tariffs, disable a booking or ask for a new authorization solely because of this warning. The existing native checkout still decides whether booking is possible.
+
+### Day-before credit warning
+
+After successfully attaching a future booking cron that uses at least one paid profile, create **one separate one-shot Hermes agent cron** for a fresh credit check. The reminder is at **18:00 Europe/Paris on the calendar day before `bookingOpensAt`**, not the day before playing. Calculate the timezone offset for that date, including DST. If that reminder time has already passed, the immediate request-time check serves as the late check; explain this and do not create a past-dated or duplicate reminder.
+
+Use `cronjob action=list` first and identify the reminder by the unique name `Tennis credits — <requestId>`. Reuse/update an existing matching reminder instead of creating a duplicate. Create with `action=create`, `name`, the calculated one-shot `schedule`, `repeat=1`, `no_agent=false`, `skills=["tennis-booking"]`, `workdir={{PROJECT_DIR}}` and a human-readable `prompt` following the instructions below. Omit `script`: this cron reads and summarizes; it must never run the booking wrapper. Preserve the booking cron's verified delivery destination, including its chat/topic; when creating both in the originating chat, omitting `deliver` uses that origin. If the origin cannot be resolved, report that the warning is not scheduled rather than silently selecting a different recipient. Keep names and credentials out of the prompt; reference the request ID instead.
+
+The reminder prompt must ask Hermes to:
+
+1. Read the current request using `node '{{PROJECT_DIR}}/scripts/booking-manager.js' show --request-id <requestId>`. Continue only if its status is `scheduled` and its `bookingOpensAt` is still in the future. A removed/cancelled/completed/running request requires no credit reminder. A read failure must be reported as an unverifiable check.
+2. Resolve the request's current booking accounts with `accounts list`, and run fresh `credits list --account '<name>'` for each paid profile. Apply the one-hour tariff/court-type rules above to the current primary and fallback choices. Do not reuse balances or account selections captured when the reminder was created.
+3. Return a French warning to the original chat only for insufficient compatible credits or an unread balance. Include the profile name, available/required hours when known, affected choices, and the upcoming attempt's date/time. If all required credits are present, or no paid profile remains, return exactly `[SILENT]`. Do not book, cancel, buy credits, edit the request, or schedule another reminder.
+
+Keep the reminder cron ID in the scheduling recap alongside the booking cron ID; `booking-manager attach` accepts only the actual booking cron, so never attach the reminder there. Verify cron creation before claiming the warning is active. If reminder creation fails, keep the booking cron and explicitly report that the day-before check is missing. This skill defines checks performed by Hermes; direct `npm start` or direct booking-manager commands do not automatically create reminders.
+
 ## Reservations already on the account
 
 ```sh
@@ -83,6 +105,8 @@ Only report cancellation when `status=cancelled` and `verified=true`. If the boo
 ## Prepare and schedule a new booking
 
 Collect the target court date, ordered clubs/hours and court types (`Couvert`, `Découvert`). Run `accounts list` to resolve the requested account by its name or id and reuse its default partners; ask for first/last names only if defaults are missing or the user asks for different guests. Resolve relative dates in Europe/Paris. Preserve fallback order. Show the exact official clubs and complete booking summary; use existing explicit authorization if already given, otherwise get confirmation before scheduling a real booking.
+
+Perform the required request-time credit check above before presenting that summary. After attaching the booking cron, apply the day-before warning procedure for paid profiles.
 
 When the user asks whether a court can be booked or the target date is missing, calculate the date seven calendar days after today in `Europe/Paris` (J+7). Ask for the missing date and hours using the actual computed date in this format: `- **La date** (à partir du DD/MM) et **les horaires souhaités**, par ordre de préférence.` For example, on 11/09 say `à partir du 18/09`. Recalculate this value for every conversation; never reuse the example date or offer an earlier target date.
 
@@ -134,6 +158,8 @@ node '{{PROJECT_DIR}}/scripts/booking-manager.js' cancel --request-id <id>
 
 This disables local execution and retains its audit record. Then remove the associated Hermes cron with `cronjob action=remove` and its `cronJobId`. If Hermes removal fails, explain that local execution is disabled but the cron still needs removal. This does not cancel an already confirmed account reservation. Running requests cannot be cancelled this way.
 
+Also remove the matching `Tennis credits — <requestId>` reminder, if present, after cancelling a future request. Never remove another request's reminder. Report a removal failure; the reminder's pending-status check prevents a cancelled booking from producing a credit warning.
+
 To change clubs, sport, fallbacks, hours, partners or court type for the same target date, present the replacement request and use existing authorization or obtain it. Write the complete variable request to a protected staging file, then:
 
 ```sh
@@ -141,6 +167,8 @@ node '{{PROJECT_DIR}}/scripts/booking-manager.js' edit --request-id <id> --input
 ```
 
 Delete that staging file afterward. The existing one-shot execution stays attached and reads the updated request. For a different date, cancel the old automation and prepare/schedule a new request after confirming the full replacement. If the new scheduling fails, report that no replacement is active; do not claim the old job was preserved.
+
+Recheck credits immediately for changed booking accounts or court choices. Reconcile the single reminder after edits: retain it for paid profiles (it reads the updated request), create it if newly needed and its time is still in the future, or remove it if all profiles are now free. Date changes remove the old reminder and compute a new one from the replacement's `bookingOpensAt`. Existing scheduled requests gain these checks when explicitly reviewed/edited through this workflow; installing the skill alone does not create reminders retroactively.
 
 ## Operational boundaries
 

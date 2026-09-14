@@ -443,6 +443,8 @@ La commande `credits:list` lit **Mon profil → Carnet de réservation**, sans r
 
 Un profil gratuit n’a pas besoin de carnet. L’absence de carnet n’indique pas son quota de réservations. En cas de connexion impossible, CAPTCHA ou page inconnue, le résultat indique une erreur et aucun solde supposé. Avec Hermes, demande par exemple : « Combien d’heures reste-t-il sur chaque profil ? ».
 
+Pour une demande de réservation via Hermes, le skill impose une lecture des crédits de chaque profil payant dès la demande : **1 h compatible par compte**, selon son tarif et le type de court. Il prévoit une seconde lecture à **18 h, heure de Paris, la veille de la tentative du bot**. Un avertissement est envoyé dans le chat d’origine si le crédit manque ou si le solde est impossible à vérifier ; aucun message si tout est bon. La tentative reste programmée. Si l’heure du rappel est déjà passée, le contrôle immédiat fait office de contrôle tardif. Ces contrôles sont orchestrés par Hermes : un lancement direct en CLI et les tâches déjà programmées ne reçoivent pas automatiquement ce rappel à l’installation du skill.
+
 [Gestion des réservations](docs/guide.md#consulter-et-annuler-une-réservation) · [Statuts et demandes futures](docs/guide.md#comprendre-les-statuts)
 
 <a id="notifications"></a>
