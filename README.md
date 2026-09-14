@@ -433,6 +433,7 @@ Le lanceur utilise `flock` sous Linux pour sérialiser les opérations. Les iden
 | Consulter le compte | `npm run reservations:list` | Lit la réservation courante sur Paris Tennis. |
 | Lire les crédits d’un profil | `npm run credits:list -- --account "Rafael Nadal"` | Lit les heures restantes par tarif et type de court. |
 | Lire tous les carnets | `npm run credits:list -- --all` | Consulte chaque compte de réservation séparément. |
+| Préparer un changement de compte | `npm run reservation:transfer -- prepare --from "Roger Federer" --to "Rafael Nadal" --reservation-id 'ID'` | Vérifie la réservation et le destinataire, sans annuler. |
 | Prévisualiser une annulation | `npm run reservations:cancel -- --id 'ID'` | Vérifie la réservation sans soumettre l’annulation. |
 | **Annuler réellement** | `npm run reservations:cancel -- --id 'ID' --confirm` | **Soumet l’annulation** de la réservation identifiée et vérifie le résultat. |
 | Voir les demandes futures | `npm run booking:list` | Affiche les demandes gérées par le helper Hermes. |
@@ -446,6 +447,22 @@ Un profil gratuit n’a pas besoin de carnet. L’absence de carnet n’indique 
 Pour une demande de réservation via Hermes, le skill impose une lecture des crédits de chaque profil payant dès la demande : **1 h compatible par compte**, selon son tarif et le type de court. Il prévoit une seconde lecture à **18 h, heure de Paris, la veille de la tentative du bot**. Un avertissement est envoyé dans le chat d’origine si le crédit manque ou si le solde est impossible à vérifier ; aucun message si tout est bon. La tentative reste programmée. Si l’heure du rappel est déjà passée, le contrôle immédiat fait office de contrôle tardif. Ces contrôles sont orchestrés par Hermes : un lancement direct en CLI et les tâches déjà programmées ne reçoivent pas automatiquement ce rappel à l’installation du skill.
 
 [Gestion des réservations](docs/guide.md#consulter-et-annuler-une-réservation) · [Statuts et demandes futures](docs/guide.md#comprendre-les-statuts)
+
+### Changer le compte qui porte une réservation
+
+Hermes peut préparer le remplacement d’une réservation par celle d’un autre joueur : « Reprends la réservation de Roger avec le compte de Rafael ». Le compte destinataire doit être sans réservation en cours et disposer d’au moins **1 h de carnet compatible** s’il est payant. Ses partenaires doivent être les joueurs réellement présents.
+
+**Ce n’est pas un transfert garanti** : le bot annule sur le premier compte, puis tente de récupérer exactement le même terrain à la même heure. Le créneau redevient public et peut être pris entre-temps ; le site peut aussi refuser le nouveau compte selon son quota. L’aperçu indique les vérifications effectuées et ce risque.
+
+Après lecture de l’aperçu et autorisation du remplacement, la commande réelle est :
+
+```sh
+npm run reservation:transfer -- execute --id 'TRANSFER_PLAN_ID' --confirm --accept-release-risk
+```
+
+L’aperçu expire après dix minutes. Deux navigateurs sont connectés avant l’annulation ; les contrôles sont refaits, puis la recherche de reprise est limitée à trente secondes sur le créneau exact. Un journal distingue le succès vérifié, l’annulation sans récupération et les résultats incertains. Aucune restauration automatique ni nouvelle exécution du même plan. Les fichiers ICS existants ne sont pas modifiés par ce parcours.
+
+[Procédure et statuts du remplacement →](docs/guide.md#remplacer-le-compte-dune-réservation)
 
 <a id="notifications"></a>
 ## Du créneau au calendrier

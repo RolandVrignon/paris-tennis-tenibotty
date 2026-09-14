@@ -102,6 +102,32 @@ node '{{PROJECT_DIR}}/scripts/tennis.js' reservations cancel --id <returned-id> 
 
 Only report cancellation when `status=cancelled` and `verified=true`. If the booking changed, the site prohibits cancellation, or the submission result is uncertain, list the account again and explain the result. Never automatically repeat a cancellation POST. Do not use `abortBooking`: that only releases a temporary booking hold.
 
+## Replace a confirmed reservation with another account
+
+Use this workflow only when the user wants to release an existing one-hour reservation and immediately try to recover that same slot on a different participating player's account. This is cancellation followed by a new booking, not a native ownership transfer. The hour becomes public and can be lost; the site's final quota/eligibility checks may still reject the destination after release. Do not promise success or that cancellation restores any particular quota or credit.
+
+Resolve both names with `accounts list`, then get the source reservation's current ID with `reservations list --account '<source>'`. Prepare a read-only preview:
+
+```sh
+node '{{PROJECT_DIR}}/scripts/transfer-reservation.js' prepare --from 'Roger Federer' --to 'Rafael Nadal' --reservation-id <source-reservation-id>
+```
+
+The helper derives the exact club, sport, court ID, date and hour from the source's displayed details and official catalogue. Unknown/ambiguous layouts stop without cancellation; never guess a tuple or edit a plan to get past that refusal. Both accounts must be distinct, cancellation must currently be available, and the destination must have no current reservation. Paid destinations require at least one matching tariff/court-type credit; free ones do not. A searchable date is checked, but `quotaVerified: false` means remaining daily/weekly quota is not established before checkout.
+
+Show the preview's source/destination, `selection`, `players`, credit balance and `risk`. Reuse the destination's default partners only if they are actually playing: an absent source account holder must not silently remain a guest. To override guests, pass `--players-file` pointing to a private JSON array of actual `{firstName,lastName}` players, then remove that staging file. The plan snapshots these guests. Never invent participants or use the monitoring account implicitly.
+
+The preview expires after ten minutes. A generic request to implement this capability is not authorization to cancel a real reservation. Once the user has authorized this exact replacement with the release risk explained, execute using the returned plan ID; reuse that authorization without asking again:
+
+```sh
+node '{{PROJECT_DIR}}/scripts/transfer-reservation.js' execute --id <transfer-plan-id> --confirm --accept-release-risk
+```
+
+The helper connects two isolated browsers, repeats preflight, verifies source cancellation, then searches only the released slot for up to thirty seconds (at most one search start every two seconds). It submits the destination booking once using its native free/carnet checkout and verifies its account reservation. There is no other-hour, other-court or other-account fallback, no automatic restoration on the source, and no alteration of a separate confirmed hour. Never replace this command with independent cancel and booking commands.
+
+Read the audit with `transfer-reservation.js show --id <transfer-plan-id>`. `transferred` means the source cancellation and destination reservation were both verified. `blocked` means this run did not cancel the source. `released_unrecovered` means the source was cancelled but the replacement was not confirmed; tell the user the hour may be lost. `needs_reconciliation` means cancellation, payment or hold cleanup is uncertain: inspect both accounts, do not replay the plan, and do not delete its retained operation lock before reconciling account state and checking the owning process. A started plan cannot execute again, including after interruption. Other booking commands do not automatically notice or adjust previously generated calendar files; tell the user the account holder changed and update their calendar only when requested.
+
+This path has browser-fixture coverage. Do not claim a live replacement was tested unless an actual authorized cancellation and recovery were performed and verified. A skill installation does not transfer any reservation.
+
 ## Prepare and schedule a new booking
 
 Collect the target court date, ordered clubs/hours and court types (`Couvert`, `Découvert`). Run `accounts list` to resolve the requested account by its name or id and reuse its default partners; ask for first/last names only if defaults are missing or the user asks for different guests. Resolve relative dates in Europe/Paris. Preserve fallback order. Show the exact official clubs and complete booking summary; use existing explicit authorization if already given, otherwise get confirmation before scheduling a real booking.

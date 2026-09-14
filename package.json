@@ -39,7 +39,8 @@
     "hermes:install": "node scripts/install-hermes-skill.js",
     "availability:monitor": "node scripts/monitor-availability.js",
     "accounts:list": "node scripts/tennis.js accounts list",
-    "credits:list": "node scripts/tennis.js credits list"
+    "credits:list": "node scripts/tennis.js credits list",
+    "reservation:transfer": "node scripts/transfer-reservation.js"
   },
   "dependencies": {
     "@gradio/client": "^2.6.0",

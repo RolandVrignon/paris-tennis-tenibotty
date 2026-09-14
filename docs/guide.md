@@ -271,6 +271,40 @@ npm run reservations:list
 
 ## Consulter et annuler une réservation
 
+### Remplacer le compte d’une réservation
+
+Ce parcours concerne une réservation déjà confirmée d’une heure. Il effectue une annulation suivie d’une nouvelle réservation, sans garantie de récupération. Le créneau redevient accessible aux autres utilisateurs. Il faut autoriser ce risque pour exécuter le changement ; préparer un aperçu ne modifie aucun compte.
+
+```sh
+npm run reservations:list -- --account "Roger Federer"
+npm run reservation:transfer -- prepare --from "Roger Federer" --to "Rafael Nadal" --reservation-id 'ID_RETOURNE'
+```
+
+Le résultat contient un ID `transfer-…`, une expiration à dix minutes, la réservation source, le créneau exact, les partenaires du destinataire, les crédits lus et le risque. La commande refuse un compte destinataire déjà réservé, des comptes correspondant aux mêmes identifiants, une annulation indisponible, des crédits incompatibles et des détails de réservation ambigus. Elle utilise le catalogue officiel pour résoudre le numéro en ID de terrain. Elle accepte actuellement une date complète, une heure entière et un numéro de court identifiables sans ambiguïté ; une présentation différente du site entraîne un refus, pas une supposition.
+
+Les partenaires par défaut viennent du destinataire. `--players-file /chemin/prive/players.json` permet de fournir un tableau de joueurs réellement présents ; ne garde pas automatiquement l’ancien titulaire s’il est absent. Le contrôle du carnet concerne son tarif et le type couvert/découvert. `quotaVerified: false` indique que la page de réservation et la recherche accessible ne prouvent pas le quota journalier/hebdomadaire restant : la validation finale appartient au site.
+
+Après autorisation explicite du remplacement présenté :
+
+```sh
+npm run reservation:transfer -- execute --id 'TRANSFER_PLAN_ID' --confirm --accept-release-risk
+npm run reservation:transfer -- show --id 'TRANSFER_PLAN_ID'
+```
+
+`--headed` est disponible pour la préparation et l’exécution. Les deux sessions sont connectées avant de libérer le créneau. Le bot refait les vérifications, annule une seule fois, vérifie l’absence sur le compte source, puis recherche le même court à la même date et heure pendant trente secondes maximum, avec au moins deux secondes entre débuts de recherche. Il utilise le paiement natif gratuit ou carnet du destinataire et vérifie sa réservation après confirmation.
+
+| Statut | Signification |
+| --- | --- |
+| `prepared` | Aperçu prêt ; aucune annulation. |
+| `blocked` | Contrôle préalable refusé ; cette exécution n’a pas annulé la source. |
+| `transferred` | Annulation source et réservation identique sur le destinataire vérifiées. |
+| `released_unrecovered` | Source annulée, reprise non confirmée : le créneau peut être perdu. |
+| `needs_reconciliation` | Résultat incertain : contrôler les deux comptes avant toute action. |
+
+Les étapes intermédiaires sont écrites avant chaque action sensible dans `transfers/` sous le répertoire d’état des réservations, en fichiers privés sans identifiants de connexion. Un plan démarré ne peut pas être rejoué. Une incertitude conserve le verrou d’opération ; ne le supprimer qu’après rapprochement des comptes et vérification du processus propriétaire. Aucun autre créneau n’est choisi, aucune remise automatique sur l’ancien compte n’est tentée et aucune autre heure confirmée n’est annulée. Les anciens événements ICS restent inchangés.
+
+Validation : scénarios locaux avec navigateurs simulant le site, dont le paiement par carnet et les refus avant annulation. La lecture des comptes sur le VPS ne constitue pas un essai de transfert réel ; celui-ci nécessite une réservation existante et une autorisation portant sur celle-ci.
+
 ### Lire les crédits horaires par profil
 
 ```sh
