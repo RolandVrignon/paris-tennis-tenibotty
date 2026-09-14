@@ -1,6 +1,6 @@
 {
   "account": {
-    "name": "Roland",
+    "name": "Roger Federer",
     "email": "user.name@host.com",
     "password": "YOUR_PASSWORD",
     "priceType": [
@@ -8,14 +8,14 @@
     ],
     "defaultPlayers": [
       {
-        "firstName": "Paul",
-        "lastName": "Dupont"
+        "firstName": "Rafael",
+        "lastName": "Nadal"
       }
     ]
   },
   "bookingAccounts": {
     "second": {
-      "name": "Paul",
+      "name": "Rafael Nadal",
       "email": "second.player@host.com",
       "password": "SECOND_PLAYER_PASSWORD",
       "priceType": [
@@ -23,8 +23,8 @@
       ],
       "defaultPlayers": [
         {
-          "firstName": "Roland",
-          "lastName": "Vrignon"
+          "firstName": "Roger",
+          "lastName": "Federer"
         }
       ]
     }

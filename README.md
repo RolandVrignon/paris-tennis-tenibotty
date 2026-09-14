@@ -23,7 +23,7 @@ Trouver le nom exact du centre. Vérifier les courts couverts. Se rappeler l’o
 
 **Tenibotty prend en charge cette préparation.** Tu choisis les clubs, les horaires et les partenaires ; le script cherche dans ton ordre de préférence, ajoute les joueurs et suit le parcours de réservation de ton compte.
 
-> « Je veux jouer lundi prochain à 18 h, sinon 19 h. Max Rousié d’abord, Jesse Owens ensuite, en couvert, avec Paul Dupont. Programme la tentative à l’ouverture. »
+> « Je veux jouer lundi prochain à 18 h, sinon 19 h. Max Rousié d’abord, Jesse Owens ensuite, en couvert, avec Rafael Nadal. Programme la tentative à l’ouverture. »
 
 Avec Hermes, la demande devient une tentative ponctuelle sur ton VPS. Tu peux ensuite consulter la réservation, gérer la demande programmée ou demander une annulation depuis la même conversation.
 
@@ -64,19 +64,19 @@ Chaque compte de réservation a son **nom**, ses identifiants, son **tarif** et 
 ```json
 {
   "account": {
-    "name": "Roland",
+    "name": "Roger Federer",
     "email": "COMPTE_PRINCIPAL",
     "password": "MOT_DE_PASSE",
     "priceType": ["Gratuité"],
-    "defaultPlayers": [{"firstName": "Paul", "lastName": "Dupont"}]
+    "defaultPlayers": [{"firstName": "Rafael", "lastName": "Nadal"}]
   },
   "bookingAccounts": {
     "second": {
-      "name": "Paul",
+      "name": "Rafael Nadal",
       "email": "DEUXIEME_COMPTE",
       "password": "MOT_DE_PASSE",
       "priceType": ["Tarif plein"],
-      "defaultPlayers": [{"firstName": "Roland", "lastName": "Vrignon"}]
+      "defaultPlayers": [{"firstName": "Roger", "lastName": "Federer"}]
     }
   },
   "monitoringAccount": {"name": "Monitoring", "email": "", "password": ""}
@@ -89,7 +89,7 @@ Pour une demande, `bookingAccount` vaut `main` par défaut. Sans champ `players`
 
 ### Deux heures consécutives, deux comptes
 
-> Programme deux heures de tennis à Pailleron lundi à 20 h, d’abord avec Roland puis Paul, avec leurs partenaires habituels.
+> Programme deux heures de tennis à Pailleron lundi à 20 h, Roger Federer pour la première heure et Rafael Nadal pour la deuxième, avec leurs partenaires habituels.
 
 ```json
 {
@@ -131,7 +131,7 @@ Ces exemples sont des **demandes à envoyer à Hermes**, une fois le projet inst
 
 ### 🎾 Préparer le prochain match
 
-> Programme une réservation pour lundi prochain : Max Rousié puis Jesse Owens, 18 h puis 19 h, en couvert, avec Paul Dupont.
+> Programme une réservation pour lundi prochain : Max Rousié puis Jesse Owens, 18 h puis 19 h, en couvert, avec Rafael Nadal.
 
 > Prépare la même demande en dry-run : je veux tester sans confirmer de réservation.
 
