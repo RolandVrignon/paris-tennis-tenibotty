@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 import dayjs from 'dayjs'
-import { attachCronJob, listBookingJobs, prepareBookingJob, removeBookingJob, cancelBookingJob, claimBookingJob, editBookingJob } from '../lib/booking-job.js'
+import { attachCronJob, listBookingJobs, prepareBookingJob, prepareCaptchaWarmup, removeBookingJob, cancelBookingJob, claimBookingJob, editBookingJob } from '../lib/booking-job.js'
 
 test('prepared Hermes jobs contain no fixed credentials and can be managed', async t => {
   const root = mkdtempSync(join(tmpdir(), 'par-ici-tennis-job-test-'))
@@ -54,6 +54,14 @@ test('prepared Hermes jobs contain no fixed credentials and can be managed', asy
   assert.equal(statSync(captchaWarmupWrapperFile).mode & 0o777, 0o700)
   assert.equal(spawnSync('bash', ['-n', wrapperFile]).status, 0)
   assert.equal(spawnSync('bash', ['-n', captchaWarmupWrapperFile]).status, 0)
+
+  const legacyRecord = JSON.parse(requestContent)
+  delete legacyRecord.captchaWarmup
+  writeFileSync(requestFile, JSON.stringify(legacyRecord))
+  rmSync(captchaWarmupWrapperFile)
+  const retrofitted = prepareCaptchaWarmup(prepared.requestId, options)
+  assert.equal(retrofitted.scheduleAt, '2026-09-15T07:54:00+02:00')
+  assert.equal(existsSync(captchaWarmupWrapperFile), true)
 
   const attached = attachCronJob(prepared.requestId, 'hermes-job-123', options, { captchaWarmupCronJobId: 'hermes-warmup-123' })
   assert.equal(attached.status, 'scheduled')

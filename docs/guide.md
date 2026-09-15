@@ -498,6 +498,8 @@ npm run booking:manage -- attach --request-id 'ID_DE_DEMANDE' --cron-job-id 'ID_
 
 Le job CAPTCHA appelle `scripts/warm-captcha-space.js` une seule fois avec `fixtures/captcha-warmup.png` ; la même vérification peut être lancée manuellement avec `npm run captcha:warmup`. Il n’utilise ni `flock`, ni le dossier d’état des réservations, ni Playwright. Il ferme sa connexion Gradio et retourne sans bloquer la réservation même si Hugging Face est indisponible. Si 07 h 54 est déjà passé, Hermes programme quand même le job principal et signale simplement l’absence de préchauffage.
 
+Une ancienne demande encore en attente peut recevoir ce seul job sans remplacer son cron de réservation : `npm run booking:manage -- captcha-warmup --request-id 'ID_DE_DEMANDE'`. La commande refuse une demande terminée ou un horaire de préchauffage déjà passé.
+
 L’option `prepare --consume` supprime le fichier d’entrée même si la préparation échoue. Elle est réservée aux fichiers `/tmp/tennis-booking-request-*.json` utilisés par Hermes.
 
 ### Lister, modifier et annuler

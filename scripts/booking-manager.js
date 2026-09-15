@@ -7,6 +7,7 @@ import {
   cancelBookingJob,
   editBookingJob,
   listBookingJobs,
+  prepareCaptchaWarmup,
   prepareBookingJob,
   readBookingJob,
   removeBookingJob,
@@ -39,6 +40,8 @@ try {
     const warmupIndex = args.indexOf('--captcha-warmup-cron-job-id')
     const attachments = warmupIndex === -1 ? {} : { captchaWarmupCronJobId: getArgument('--captcha-warmup-cron-job-id') }
     print(attachCronJob(getArgument('--request-id'), getArgument('--cron-job-id'), {}, attachments))
+  } else if (command === 'captcha-warmup') {
+    print(prepareCaptchaWarmup(getArgument('--request-id')))
   } else if (command === 'list') {
     print(listBookingJobs())
   } else if (command === 'show') {
@@ -50,7 +53,7 @@ try {
   } else if (command === 'cleanup') {
     print({ removed: removeBookingJob(getArgument('--request-id'))?.id || null })
   } else {
-    throw new Error('Usage: booking-manager.js prepare|attach|list|show|edit|cancel|cleanup')
+    throw new Error('Usage: booking-manager.js prepare|attach|captcha-warmup|list|show|edit|cancel|cleanup')
   }
 } catch (error) {
   process.stderr.write(`${error.message}\n`)
