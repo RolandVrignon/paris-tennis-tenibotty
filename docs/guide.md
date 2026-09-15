@@ -496,7 +496,7 @@ Le [skill Hermes](../skills/tennis-booking/SKILL.md) décrit la création du cro
 npm run booking:manage -- attach --request-id 'ID_DE_DEMANDE' --cron-job-id 'ID_DU_CRON_HERMES' --captcha-warmup-cron-job-id 'ID_DU_CRON_WARMUP'
 ```
 
-Le job CAPTCHA appelle `scripts/warm-captcha-space.js` une seule fois avec `fixtures/captcha-warmup.png` ; la même vérification peut être lancée manuellement avec `npm run captcha:warmup`. Il n’utilise ni `flock`, ni le dossier d’état des réservations, ni Playwright. Il ferme sa connexion Gradio et retourne sans bloquer la réservation même si Hugging Face est indisponible. Si 07 h 54 est déjà passé, Hermes programme quand même le job principal et signale simplement l’absence de préchauffage.
+Le job CAPTCHA lance `scripts/warm-captcha-space.js` en arrière-plan une seule fois avec `fixtures/captcha-warmup.png`, puis rend immédiatement la main au scheduler Hermes ; la même vérification peut être lancée manuellement avec `npm run captcha:warmup`. Il n’utilise ni `flock`, ni le dossier d’état des réservations, ni Playwright. Il ferme sa connexion Gradio et ne bloque pas la réservation même si Hugging Face est lent ou indisponible. Si 07 h 54 est déjà passé, Hermes programme quand même le job principal et signale simplement l’absence de préchauffage.
 
 Une ancienne demande encore en attente peut recevoir ce seul job sans remplacer son cron de réservation : préparer le wrapper avec `npm run booking:manage -- captcha-warmup --request-id 'ID_DE_DEMANDE'`, créer le cron retourné, puis enregistrer son ID avec `npm run booking:manage -- attach-captcha-warmup --request-id 'ID_DE_DEMANDE' --cron-job-id 'ID_DU_CRON_WARMUP'`. Ces commandes refusent une demande terminée ou un horaire de préchauffage déjà passé.
 

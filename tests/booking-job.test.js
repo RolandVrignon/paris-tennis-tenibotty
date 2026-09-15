@@ -49,6 +49,7 @@ test('prepared Hermes jobs contain no fixed credentials and can be managed', asy
   assert.doesNotMatch(wrapperContent, /never-copy-this-secret/)
   assert.doesNotMatch(captchaWarmupWrapperContent, /never-copy-this-secret|flock|operation-lock|run-booking-request/)
   assert.match(captchaWarmupWrapperContent, /warm-captcha-space\.js/)
+  assert.match(captchaWarmupWrapperContent, /nohup[\s\S]+warm-captcha-space\.js[\s\S]+&/)
   assert.equal(statSync(requestFile).mode & 0o777, 0o600)
   assert.equal(statSync(wrapperFile).mode & 0o777, 0o700)
   assert.equal(statSync(captchaWarmupWrapperFile).mode & 0o777, 0o700)
