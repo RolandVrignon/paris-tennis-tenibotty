@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 import dayjs from 'dayjs'
-import { attachCronJob, listBookingJobs, prepareBookingJob, prepareCaptchaWarmup, removeBookingJob, cancelBookingJob, claimBookingJob, editBookingJob } from '../lib/booking-job.js'
+import { attachCaptchaWarmupCronJob, attachCronJob, listBookingJobs, prepareBookingJob, prepareCaptchaWarmup, removeBookingJob, cancelBookingJob, claimBookingJob, editBookingJob } from '../lib/booking-job.js'
 
 test('prepared Hermes jobs contain no fixed credentials and can be managed', async t => {
   const root = mkdtempSync(join(tmpdir(), 'par-ici-tennis-job-test-'))
@@ -67,6 +67,8 @@ test('prepared Hermes jobs contain no fixed credentials and can be managed', asy
   assert.equal(attached.status, 'scheduled')
   assert.equal(attached.cronJobId, 'hermes-job-123')
   assert.equal(attached.captchaWarmup.cronJobId, 'hermes-warmup-123')
+  assert.equal(attachCaptchaWarmupCronJob(prepared.requestId, 'hermes-warmup-123', options).captchaWarmup.cronJobId, 'hermes-warmup-123')
+  assert.throws(() => attachCaptchaWarmupCronJob(prepared.requestId, 'other-warmup', options), /different CAPTCHA warmup cron/)
   assert.equal(listBookingJobs(options).length, 1)
 
   await assert.rejects(() => prepareBookingJob({

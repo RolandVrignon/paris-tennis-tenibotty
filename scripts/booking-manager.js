@@ -3,6 +3,7 @@
 import { readFileSync, rmSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import {
+  attachCaptchaWarmupCronJob,
   attachCronJob,
   cancelBookingJob,
   editBookingJob,
@@ -42,6 +43,8 @@ try {
     print(attachCronJob(getArgument('--request-id'), getArgument('--cron-job-id'), {}, attachments))
   } else if (command === 'captcha-warmup') {
     print(prepareCaptchaWarmup(getArgument('--request-id')))
+  } else if (command === 'attach-captcha-warmup') {
+    print(attachCaptchaWarmupCronJob(getArgument('--request-id'), getArgument('--cron-job-id')))
   } else if (command === 'list') {
     print(listBookingJobs())
   } else if (command === 'show') {
@@ -53,7 +56,7 @@ try {
   } else if (command === 'cleanup') {
     print({ removed: removeBookingJob(getArgument('--request-id'))?.id || null })
   } else {
-    throw new Error('Usage: booking-manager.js prepare|attach|captcha-warmup|list|show|edit|cancel|cleanup')
+    throw new Error('Usage: booking-manager.js prepare|attach|captcha-warmup|attach-captcha-warmup|list|show|edit|cancel|cleanup')
   }
 } catch (error) {
   process.stderr.write(`${error.message}\n`)
