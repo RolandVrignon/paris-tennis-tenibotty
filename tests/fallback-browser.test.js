@@ -32,7 +32,7 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
       observed.logins.push(loggedIn)
       observed.loginCookies.push(req.headers.cookie || '')
       res.setHeader('Set-Cookie', `account=${loggedIn}; Path=/; HttpOnly`)
-      observed.loginAt = Date.now(); html = firstBookingLoginFailure && loggedIn === 'booking' && observed.logins.filter(value => value === 'booking').length > 1 ? '<div>Login failed</div>' : '<div class="main-informations">Connected</div>'
+      observed.loginAt = Date.now(); html = firstBookingLoginFailure && loggedIn === 'booking' ? '<div>Login failed</div>' : '<div class="main-informations">Connected</div>'
     }
     else if (url.searchParams.get('view') === 'start') html = '<button id="button_suivi_inscription">Login</button><form id="form-login" action="/login"><input id="username" name="username"><input id="password"><button>Connect</button></form>'
     else if (url.searchParams.get('page') === 'recherche') html = `<script>var tennis = ${JSON.stringify(catalog)};</script>
@@ -205,12 +205,12 @@ test('a slow search finishes before another request starts', async t => {
 })
 
 
-test('dedicated monitoring switches to an isolated booking session and rechecks the booking tariff', async t => {
+test('a configured monitoring account is ignored by booking and one booking session performs the search and checkout', async t => {
   const result = await runFixture(t, { dualAccount: true })
   assert.equal(result.code, 0, result.output)
-  assert.deepEqual(result.logins, ['monitoring', 'booking'])
-  assert.deepEqual(result.loginCookies, ['', ''])
-  assert.deepEqual(result.searchAccounts, ['monitoring', 'booking'])
+  assert.deepEqual(result.logins, ['booking'])
+  assert.deepEqual(result.loginCookies, [''])
+  assert.deepEqual(result.searchAccounts, ['booking'])
   assert.deepEqual(result.holdAccounts, ['booking'])
   assert.deepEqual(result.submissionAccounts, ['booking'])
   assert.deepEqual(result.outcomes, ['submitted', 'confirmed'])
@@ -223,26 +223,27 @@ test('dual-account dry-run holds and cancels only with the booking account', asy
   assert.equal(result.aborts, 1)
   assert.deepEqual(result.outcomes, ['dry-run-cancelled'])
 })
-test('a disappeared padel slot is rechecked without holding it and tennis keeps account separation', async t => {
+test('a missing padel slot falls back to tennis in the same booking session', async t => {
   const result = await runFixture(t, { dualAccount: true, bookingPadel: false, dryRun: true })
   assert.equal(result.code, 0, result.output)
-  assert.deepEqual(result.searches, ['padel', 'padel', 'tennis', 'tennis'])
-  assert.deepEqual(result.searchAccounts, ['monitoring', 'booking', 'monitoring', 'booking'])
+  assert.deepEqual(result.searches, ['padel', 'tennis'])
+  assert.deepEqual(result.searchAccounts, ['booking', 'booking'])
   assert.deepEqual(result.holds, ['tennis'])
   assert.deepEqual(result.holdAccounts, ['booking'])
-  assert.deepEqual(result.loginCookies, ['', '', '', ''])
+  assert.deepEqual(result.loginCookies, [''])
 })
-test('unavailable monitored courts never cause a login with the booking account', async t => {
+test('unavailable courts are searched by the booking account without a hold', async t => {
   const result = await runFixture(t, { dualAccount: true, padel: false, tennis: false })
   assert.equal(result.code, 0, result.output)
-  assert.deepEqual(result.logins, ['monitoring'])
+  assert.deepEqual(result.logins, ['booking'])
   assert.deepEqual(result.holds, [])
 })
-test('a tariff mismatch resumes monitoring without repeated booking logins on every poll', async t => {
+test('a tariff mismatch keeps polling in the original booking session', async t => {
   const result = await runFixture(t, { dualAccount: true, padelPrice: 'Tarif plein', tennis: false, polling: { intervalSeconds: 2, durationSeconds: 6 } })
   assert.equal(result.code, 0, result.output)
-  assert.deepEqual([...result.logins].sort(), ['booking', 'monitoring', 'monitoring'])
-  assert.equal(result.searchAccounts.filter(account => account === 'booking').length, 1)
+  assert.deepEqual(result.logins, ['booking'])
+  assert.ok(result.searchAccounts.length > 1)
+  assert.ok(result.searchAccounts.every(account => account === 'booking'))
   assert.deepEqual(result.holds, [])
   assert.deepEqual(result.outcomes, [])
 })
@@ -255,7 +256,7 @@ test('two consecutive hours use each account tariff and its default guest, with 
   assert.deepEqual(result.submissionHours, ['21', '20'])
   assert.deepEqual([...result.holdHours].sort(), ['20', '21'])
   assert.deepEqual([...result.holdAccounts].sort(), ['booking', 'second'])
-  assert.deepEqual(result.loginCookies, ['', '', ''])
+  assert.deepEqual(result.loginCookies, ['', ''])
   assert.deepEqual(result.partners.toSorted((a, b) => a.hour.localeCompare(b.hour)).map(row => row.players), [['Player', 'Second'], ['Player', 'First']])
   assert.deepEqual(result.paymentModes, ['existingTicket', null])
   assert.deepEqual(result.legOutcomes.toSorted((a, b) => a.leg - b.leg).map(row => [row.leg, row.status]), [[0, 'submitted'], [0, 'confirmed'], [1, 'submitted'], [1, 'confirmed']])
@@ -264,11 +265,11 @@ test('two consecutive hours use each account tariff and its default guest, with 
     assert.ok(ics.includes(`DTSTART:${expected}`), ics)
   }
 })
-test('second booking can share monitoring credentials but opens a fresh unguarded booking session', async t => {
+test('second booking can share monitoring credentials without a shared discovery session', async t => {
   const result = await runFixture(t, { consecutive: true, dualAccount: true, secondMatchesMonitoring: true })
   assert.equal(result.code, 0, result.output)
-  assert.deepEqual([...result.logins].sort(), ['booking', 'monitoring', 'monitoring'])
-  assert.deepEqual(result.loginCookies, ['', '', ''])
+  assert.deepEqual(result.logins, ['booking', 'monitoring'])
+  assert.deepEqual(result.loginCookies, ['', ''])
   assert.deepEqual([...result.submissionAccounts].sort(), ['booking', 'monitoring'])
 })
 test('a consecutive dry-run cancels both holds without submitting either payment', async t => {
@@ -279,12 +280,13 @@ test('a consecutive dry-run cancels both holds without submitting either payment
   assert.deepEqual(result.submissions, [])
   assert.deepEqual(result.outcomes, ['dry-run-cancelled', 'dry-run-cancelled'])
 })
-test('missing next hour preserves the first reservation without a fallback or replay', async t => {
+test('missing next hour preserves the first reservation while its independent leg may try fallback', async t => {
   const result = await runFixture(t, { consecutive: true, secondAvailable: false })
   assert.equal(result.code, 1, result.output)
   assert.deepEqual(result.submissionAccounts, ['booking'])
   assert.deepEqual(result.holdHours, ['20'])
-  assert.deepEqual(result.searches, ['padel', 'padel', 'padel'])
+  assert.equal(result.searches.filter(sport => sport === 'padel').length, 2)
+  assert.equal(result.searches.filter(sport => sport === 'tennis').length, 1)
   assert.equal(result.aborts, 0)
   assert.match(result.output, /Consecutive booking incomplete/)
 })
@@ -314,31 +316,32 @@ test('an explicit guest overrides only the first account default for this reques
 })
 
 
-test('a second hour on another court is never silently substituted', async t => {
+test('the independent second leg may reserve its requested hour on another court', async t => {
   const result = await runFixture(t, { consecutive: true, secondAvailable: false, secondOtherCourt: true })
-  assert.equal(result.code, 1, result.output)
-  assert.deepEqual(result.holdHours, ['20'])
-  assert.deepEqual(result.submissionAccounts, ['booking'])
+  assert.equal(result.code, 0, result.output)
+  assert.deepEqual([...result.holdHours].sort(), ['20', '21'])
+  assert.deepEqual([...result.submissionAccounts].sort(), ['booking', 'second'])
 })
 test('the second account cannot use the first account free tariff', async t => {
   const result = await runFixture(t, { consecutive: true, secondPrice: 'Gratuité' })
   assert.equal(result.code, 1, result.output)
   assert.deepEqual(result.submissionAccounts, ['booking'])
 })
-test('no availability for either hour means no booking sessions or holds', async t => {
+test('no availability still warms both independent booking sessions without holds', async t => {
   const result = await runFixture(t, { consecutive: true, padel: false, tennis: false })
   assert.equal(result.code, 0, result.output)
-  assert.deepEqual(result.logins, ['booking'])
+  assert.deepEqual([...result.logins].sort(), ['booking', 'second'])
   assert.deepEqual(result.holds, [])
 })
 
 
-test('only the second hour is available: reserve it without the first or a tennis fallback', async t => {
+test('only the second hour is available while the first leg exhausts its fallback', async t => {
   const result = await runFixture(t, { consecutive: true, firstAvailable: false })
   assert.equal(result.code, 1, result.output)
   assert.deepEqual(result.holdHours, ['21'])
   assert.deepEqual(result.submissionAccounts, ['second'])
-  assert.deepEqual(result.searches, ['padel', 'padel', 'padel'])
+  assert.equal(result.searches.filter(sport => sport === 'padel').length, 2)
+  assert.equal(result.searches.filter(sport => sport === 'tennis').length, 1)
   assert.equal(result.aborts, 0)
   assert.equal(result.consecutiveIcs[0], '')
   assert.match(result.consecutiveIcs[1], /SUMMARY:Réservation Padel/)
@@ -382,11 +385,10 @@ test('unverified cleanup on one account cannot erase the other account confirmat
   assert.deepEqual(result.abortAccounts, ['booking'])
   assert.deepEqual(result.legOutcomes.toSorted((a, b) => a.leg - b.leg).map(row => [row.leg, row.status]), [[0, 'cleanup-unverified'], [1, 'submitted'], [1, 'confirmed']])
 })
-test('parallel bookings share one polling window before the tennis fallback', async t => {
+test('parallel bookings each own a polling window before their tennis fallback', async t => {
   const result = await runFixture(t, { consecutive: true, dualAccount: true, padel: false, dryRun: true, polling: { intervalSeconds: 2, durationSeconds: 4 } })
   assert.equal(result.code, 0, result.output)
-  assert.equal(result.searches.filter(sport => sport === 'tennis').length, 3)
-  assert.ok(result.searches.slice(0, -3).every(sport => sport === 'padel'))
+  assert.equal(result.searches.filter(sport => sport === 'tennis').length, 2)
   assert.ok(result.searchTimes[result.searches.indexOf('tennis')] >= result.searchStart + 4000)
   assert.deepEqual([...result.holdHours].sort(), ['20', '21'])
   assert.equal(result.aborts, 2)

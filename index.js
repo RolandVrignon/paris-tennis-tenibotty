@@ -11,19 +11,16 @@ import { bookingJobOptions } from './lib/booking-job.js'
 import { acquireOperationLock } from './lib/operation-lock.js'
 import { getBookingTargets, buildBookingConfig } from './lib/booking-request.js'
 import { normalizePolling, parseSearchStart, searchAttempts } from './lib/search-window.js'
-import { loadMonitoringConfig, resolveBookingProfile, VARIABLE_CONFIG_KEYS } from './lib/config.js'
+import { resolveBookingProfile, VARIABLE_CONFIG_KEYS } from './lib/config.js'
 import { authenticatePage } from './lib/site-session.js'
-import { guardMonitorPage } from './lib/availability-monitor.js'
-import { searchBookingTarget, clickBookingCandidate } from './lib/booking-search.js'
+import { prepareBookingTarget, searchBookingTarget, clickBookingCandidate } from './lib/booking-search.js'
 import { preparePayment } from './lib/payment.js'
-import { consecutiveSearchTarget, findConsecutivePair, nextHour } from './lib/consecutive.js'
+import { consecutiveLegTargets, runConsecutiveLegs } from './lib/consecutive.js'
 
 dayjs.extend(customParseFormat)
 
-const bookTennis = async (config, { leg = 0, targetsOverride, searchStartOverride, monitoring, discoverConsecutive = false } = {}) => {
+const bookTennis = async (config, { leg = 0, targetsOverride, searchStartOverride } = {}) => {
   const targets = targetsOverride || getBookingTargets(config)
-  // Monitoring may intentionally use the same credentials as this booking profile.
-  monitoring = { ...monitoring, dedicated: monitoring.dedicated && monitoring.account.email.trim().toLowerCase() !== config.account.email.trim().toLowerCase() }
   let outcome
   const planned = targetsOverride?.[0]
   let selection = planned ? { sport: planned.sport, location: planned.location, courtId: planned.courtId, hour: planned.hours[0], courtType: planned.courtType[0], date: config.date } : undefined
@@ -50,23 +47,21 @@ const bookTennis = async (config, { leg = 0, targetsOverride, searchStartOverrid
   let browser
   debugLog(`mode=${DRY_RUN_MODE ? 'dry-run' : 'real'} browser=${HEADED_MODE ? 'headed' : 'headless'} captchaAI=${config.ai?.enable === false ? 'disabled' : 'enabled'}`)
   let page
-  let role
-  const openSession = async nextRole => {
+  const openSession = async () => {
     if (page) await page.close()
     // browser.newPage creates an isolated context; closing it discards its cookies.
     page = await browser.newPage()
-    role = nextRole
     page.setDefaultTimeout(90000)
-    if (role === 'monitoring' || discoverConsecutive) await guardMonitorPage(page)
-    if (DEBUG_MODE) page.on('pageerror', error => debugLog(`page-error role=${role} message=${JSON.stringify(error.message)}`))
-    const account = role === 'monitoring' ? monitoring.account : {
+
+    if (DEBUG_MODE) page.on('pageerror', error => debugLog(`page-error role=booking message=${JSON.stringify(error.message)}`))
+    const account = {
       email: config.account?.email || process.env.ACCOUNT_EMAIL,
       password: config.account?.password || process.env.ACCOUNT_PASSWORD,
     }
     await authenticatePage(page, account, captchaOptions, 'https://tennis.paris.fr/tennis/jsp/site/Portal.jsp?page=tennis&view=start&full=1')
-    console.log(`${dayjs().format()} - User connected (${role} account)`)
+    console.log(`${dayjs().format()} - User connected (booking account)`)
   }
-  const retryAfter = new Map()
+
   let canAbortBooking = false
   let finished = false
   let failed = false
@@ -80,7 +75,15 @@ const bookTennis = async (config, { leg = 0, targetsOverride, searchStartOverrid
   try {
     browser = await chromium.launch({ headless: !HEADED_MODE, slowMo: HEADED_MODE ? 250 : 0, timeout: 90000 })
     console.log(`${dayjs().format()} - Browser started`)
-    await openSession(monitoring.dedicated ? 'monitoring' : 'booking')
+    await openSession()
+
+    const date = config.date ? dayjs(config.date, 'D/MM/YYYY') : dayjs().add(6, 'days')
+    const searchUrl = 'https://tennis.paris.fr/tennis/jsp/site/Portal.jsp?page=recherche&view=recherche_creneau#!'
+    let prepared = await prepareBookingTarget(page, {
+      target: targets[0],
+      date, polling, captchaOptions, searchUrl,
+    })
+    console.log(`${dayjs().format()} - Primary search prepared with booking account; waiting for opening`)
 
     console.log(`${dayjs().format()} - Connected; search starts at ${new Date(searchStart).toISOString()}${polling ? `, interval ${polling.intervalSeconds}s, window ${polling.durationSeconds}s` : ''}`)
     locationsLoop:
@@ -89,50 +92,33 @@ const bookTennis = async (config, { leg = 0, targetsOverride, searchStartOverrid
       const { sport, location: requestedLocation, priority } = target
       const logLocation = process.env.GITHUB_ACTIONS ? `priority ${priority + 1}` : requestedLocation
       console.log(`${dayjs().format()} - Search ${sport} at ${logLocation} (priority ${priority + 1}, attempt ${attempt})`)
-      if (monitoring.dedicated && role !== 'monitoring') await openSession('monitoring')
-      const date = config.date ? dayjs(config.date, 'D/MM/YYYY') : dayjs().add(6, 'days')
       const search = (searchDeadline, priceTypes) => searchBookingTarget(page, {
-        target: discoverConsecutive ? consecutiveSearchTarget(target) : target, date, deadline: searchDeadline, polling, priceTypes, captchaOptions, debugLog,
-        searchUrl: 'https://tennis.paris.fr/tennis/jsp/site/Portal.jsp?page=recherche&view=recherche_creneau#!',
+        target, date, deadline: searchDeadline, polling, priceTypes, captchaOptions, debugLog,
+        searchUrl, prepared,
       })
       let result
-      try { result = await search(deadline, monitoring.dedicated || discoverConsecutive ? undefined : config.priceType) } catch (error) {
+      try { result = await search(deadline, config.priceType) } catch (error) {
         if (deadline && Date.now() >= deadline && error.name === 'TimeoutError') {
           debugLog('search-deadline-reached during loading')
           continue
         }
         throw error
       }
+      prepared = undefined
       if (deadline && Date.now() >= deadline) continue
       if (!result.dateSelectable) {
         console.log(`${dayjs().format()} - Requested date not yet selectable for ${logLocation}`)
         continue
       }
-      let candidate = result.candidates.find(item => !monitoring.dedicated || (retryAfter.get(item.key) || 0) <= Date.now())
+      const candidate = result.candidates[0]
       if (!candidate) {
         console.log(`${dayjs().format()} - Failed to find reservation for ${logLocation}`)
         continue
       }
-      if (discoverConsecutive) {
-        const pair = findConsecutivePair({ ...target, location: result.location }, result.candidates)
-        return { status: 'discovered', selection: { ...pair, date: date.format('DD/MM/YYYY') } }
-      }
-      if (monitoring.dedicated) {
-        const detected = result.candidates
-        console.log(`${dayjs().format()} - Availability detected by monitoring account; opening a fresh booking session`)
-        await openSession('booking')
-        // Availability and account-specific tariff must be checked again; never reuse a monitoring form.
-        result = await search(undefined, config.priceType)
-        candidate = result.candidates[0]
-        if (!candidate) {
-          for (const item of detected) retryAfter.set(item.key, Date.now() + 30000)
-          console.log(`${dayjs().format()} - No compatible slot for booking account; resume monitoring (30s before retrying these slots)`)
-          continue
-        }
-      }
+
       selection = { sport, location: result.location, courtId: candidate.courtId, hour: candidate.hour, courtType: candidate.courtType, date: date.format('DD/MM/YYYY') }
       const selectedHour = candidate.hour
-      debugLog(`slot-selected role=${role} date=${date.format('YYYY-MM-DD')} hour=${candidate.hour} courtId=${candidate.courtId} priceType=${candidate.priceType}`)
+      debugLog(`slot-selected role=booking date=${date.format('YYYY-MM-DD')} hour=${candidate.hour} courtId=${candidate.courtId} priceType=${candidate.priceType}`)
       canAbortBooking = true
       await clickBookingCandidate(page, result.location, candidate)
 
@@ -289,33 +275,26 @@ try {
   const request = Object.fromEntries(VARIABLE_CONFIG_KEYS.filter(key => Object.hasOwn(config, key)).map(key => [key, config[key]]))
   request.date ||= dayjs().add(6, 'days').format('DD/MM/YYYY')
   const fullConfig = buildBookingConfig(config, request)
-  const monitoring = loadMonitoringConfig({ bookingConfig: config })
+
   const settings = (id, players) => {
     const profile = resolveBookingProfile(config, id)
     return { ...fullConfig, account: profile.account, priceType: profile.priceType, bookingAccount: id, players, consecutiveRun: !!fullConfig.consecutive }
   }
-  if (!fullConfig.consecutive) await bookTennis(settings(fullConfig.bookingAccount || 'main', fullConfig.players), { monitoring })
+  if (!fullConfig.consecutive) await bookTennis(settings(fullConfig.bookingAccount || 'main', fullConfig.players))
   else {
-    // One read-only search respects the shared opening window and fallback order.
-    // Neither account's booking depends on the other account's confirmation.
-    const discovery = await bookTennis({ ...settings(fullConfig.bookingAccount || 'main', fullConfig.players), consecutiveRun: false }, { monitoring, discoverConsecutive: true })
     const next = fullConfig.consecutive
     const profiles = [[fullConfig.bookingAccount || 'main', fullConfig.players], [next.bookingAccount, next.players]]
-    if (discovery.status !== 'discovered') {
-      for (const [leg, [accountId]] of profiles.entries()) reportBookingResult(discovery.status, { leg, accountId })
-    } else {
-      const selected = discovery.selection
-      console.log(`Parallel consecutive booking: ${selected.location}, ${selected.hour}h / ${nextHour(selected.hour)}h, court ${selected.courtId}`)
-      const results = await Promise.allSettled(profiles.map(([id, players], leg) => bookTennis({ ...settings(id, players), polling: undefined }, {
-        leg, monitoring: { ...monitoring, dedicated: false }, searchStartOverride: Date.now(),
-        targetsOverride: [{ ...selected, hours: [leg === 0 ? selected.hour : nextHour(selected.hour)], courtType: [selected.courtType], courtNumbers: [], priority: 0 }],
-      })))
-      const statuses = results.map(result => result.status === 'fulfilled' ? result.value.status : 'interrupted')
-      if (statuses.every(status => ['confirmed', 'dry-run-cancelled'].includes(status))) console.log('Both consecutive hours completed successfully')
-      else {
-        console.log(`Consecutive booking incomplete: first hour ${statuses[0]}; second hour ${statuses[1]}. Every confirmed hour is retained; do not replay this request.`)
-        if (statuses.some(status => status !== 'unavailable')) process.exitCode = 1
-      }
+    const targets = getBookingTargets(fullConfig)
+    console.log(`Parallel consecutive booking: independent sessions for ${targets[0].hours[0]}h and ${consecutiveLegTargets(targets, 1)[0].hours[0]}h`)
+    const results = await runConsecutiveLegs(leg => {
+      const [id, players] = profiles[leg]
+      return bookTennis(settings(id, players), { leg, targetsOverride: consecutiveLegTargets(targets, leg) })
+    })
+    const statuses = results.map(result => result.status === 'fulfilled' ? result.value.status : 'interrupted')
+    if (statuses.every(status => ['confirmed', 'dry-run-cancelled'].includes(status))) console.log('Both consecutive hours completed successfully')
+    else {
+      console.log(`Consecutive booking incomplete: first hour ${statuses[0]}; second hour ${statuses[1]}. Every confirmed hour is retained; do not replay this request.`)
+      if (statuses.some(status => status !== 'unavailable')) process.exitCode = 1
     }
   }
 } finally { release() }

@@ -135,7 +135,7 @@ Plusieurs valeurs peuvent être acceptées, mais leur ordre ne définit pas une 
 
 | Champ | Utilisation |
 | --- | --- |
-| `polling` | Option de recherche répétée : `intervalSeconds` (2 à 60), `durationSeconds` (au plus 600), `fallbackMode` (`after-window` par défaut ou `each-cycle`). Sans ce champ, un seul passage. |
+| `polling` | Option de recherche répétée : `intervalSeconds` (1 à 60, 1 par défaut), `durationSeconds` (au plus 120, soit jusqu’à 08 h 02 pour une ouverture à 08 h), `fallbackMode` (`after-window` par défaut ou `each-cycle`). Sans ce champ, un seul passage. |
 | `fallbacks` | Liste ordonnée de replis : `sport` et `locations` obligatoires ; `hours` et `courtType` facultatifs, hérités du choix principal. |
 | `sport` | `tennis` par défaut ; `padel` pour les pistes de padel. Le mode padel accepte un à trois partenaires. |
 | `locations` | Clubs par ordre de préférence ; leurs noms sont vérifiés avant réservation. |
@@ -438,10 +438,10 @@ Hermes distingue une réservation déjà présente sur le compte d’une tentati
 Exemple à ajouter à une demande padel avec repli tennis :
 
 ```json
-"polling": { "intervalSeconds": 2, "durationSeconds": 600, "fallbackMode": "after-window" }
+"polling": { "intervalSeconds": 1, "durationSeconds": 120, "fallbackMode": "after-window" }
 ```
 
-Le choix principal est recherché de 8 h à 8 h 10, puis les replis sont essayés une seule fois. L’intervalle est un minimum entre débuts de recherche : si la réponse et son affichage prennent plus de deux secondes, le script attend leur fin. Le calendrier pas encore ouvert est réessayé dans cette fenêtre. Une réponse HTTP en erreur ou une page non reconnue n’est pas assimilée à un résultat vide.
+Le choix principal est recherché de 8 h à 8 h 02, puis les replis sont essayés une seule fois. L’intervalle est un minimum entre débuts de recherche : si la réponse et son affichage prennent plus d’une seconde, le script attend leur fin. Le calendrier pas encore ouvert est réessayé dans cette fenêtre. Une réponse HTTP en erreur ou une page non reconnue n’est pas assimilée à un résultat vide.
 
 La fenêtre est ancrée sur l’ouverture stockée dans la demande, pas sur la fin de connexion. Le checkout d’un créneau sélectionné avant la limite et le passage final sur les replis peuvent finir après cette limite. Le mode `each-cycle` alterne les choix dans l’ordre pendant une seule fenêtre commune ; utiliser ce mode uniquement si une réservation de secours immédiate est souhaitée.
 
@@ -685,8 +685,10 @@ Une transition vide → créneaux permet d’encadrer l’apparition observée, 
 
 Si `monitoringAccount` est absent, nul ou entièrement vide, le compte choisi pour réserver est utilisé ; le monitoring autonome prend le premier compte du tableau. S’il est renseigné, les deux valeurs sont obligatoires. Dans le format tableau, il peut partager les identifiants d’un compte de réservation ; si ce compte est sélectionné, le parcours utilise directement cette identité. Une configuration partielle ou un échec d’authentification du compte configuré arrête l’opération ; il n’y a pas de bascule silencieuse vers les identifiants principaux.
 
-Au lancement programmé, le navigateur se connecte au compte de monitoring et attend l’ouverture prévue. Les recherches répétées et les détections de replis restent sur ce compte. Une disponibilité aux heures, pistes et types de terrain demandés déclenche la fermeture de ce contexte navigateur, puis une connexion dans un contexte neuf avec le compte choisi pour réserver. Le script refait la recherche et vérifie son tarif avant de sélectionner un créneau. Aucune donnée de formulaire ni aucun cookie de monitoring n’est réutilisé pour réserver.
+Au lancement programmé (07:55), le navigateur se connecte directement au compte choisi pour réserver. Dans cette même session, il ouvre la recherche du choix prioritaire, renseigne le club et tente de renseigner la date, sans soumettre la recherche ni sélectionner de créneau. À l’ouverture stockée (08:00), il soumet immédiatement ce formulaire préparé ; si la date n’était pas encore proposée, il recharge et prépare alors la recherche complète. Polling et replis continuent ensuite dans cette session avec le tarif du compte de réservation.
 
-Si la seconde recherche ne trouve plus de créneau compatible, le script revient au compte de monitoring. Un délai de trente secondes par créneau évite de reconnecter le principal à chaque relevé identique ; la limite initiale de recherche reste applicable. Après sélection, une erreur de checkout arrête la tâche comme auparavant. Les tests dry-run utilisent également le principal pour la sélection et l’annulation temporaire.
+`monitoringAccount` n’intervient jamais dans une tentative de réservation programmée. Après sélection, une erreur de checkout arrête la tâche comme auparavant. Les tests dry-run utilisent également le compte choisi pour la sélection et l’annulation temporaire.
+
+Pour deux heures consécutives, deux Chromium et deux sessions de compte sont lancés en parallèle dès le préchauffage de 07 h 55, sans recherche de découverte commune. Chaque session prépare sa propre page sans soumettre ; à 08 h, la première ne cherche que l’heure de début et la seconde que l’heure suivante, avec un polling indépendant chaque seconde jusqu’à 08 h 02. Chacune conserve ses joueurs, tarifs, replis et nettoyage dry-run. L’échec ou l’absence d’un créneau ne bloque, n’annule ni ne relance l’autre ; un succès isolé est conservé et signalé comme partiel. Les replis indépendants peuvent mener à des terrains ou sports différents.
 
 `availability:monitor` choisit automatiquement `monitoringAccount` lorsqu’il est renseigné et n’effectue jamais de bascule pour réserver. `--check` annonce le rôle choisi ; le rapport conserve `accountRole` sans adresse ni mot de passe. Les fichiers fixes sont lus au lancement : compléter le bloc sur le VPS avant le démarrage du cron. Il est aussi accepté dans le fichier historique `config.json`.

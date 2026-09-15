@@ -115,9 +115,9 @@ La première commande vérifie la migration sans écrire. La seconde crée une s
 }
 ```
 
-Cette option lance **deux réservations d’une heure en parallèle, dans deux Chromium distincts** : 20–21 h avec le premier compte et 21–22 h avec le second, sur **le même terrain, dans le même centre et pour le même sport**. Une recherche commune, sans pré-réservation, choisit d’abord le terrain et les heures, y compris après un repli padel → tennis. Elle utilise le compte de monitoring s’il est configuré, sinon le compte choisi pour la première heure, et conserve la fenêtre de recherche prévue. Les deux comptes se connectent ensuite séparément, revérifient chacun leur créneau et leur tarif, puis confirment indépendamment. `hours` reste une liste de préférences pour la première heure ; elle ne représente pas une durée. Le départ à 23 h est refusé pour éviter de changer de date.
+Cette option lance **deux réservations d’une heure en parallèle, dans deux Chromium distincts dès le préchauffage** : 20–21 h avec le premier compte et 21–22 h avec le second. Il n’y a aucune découverte commune : chaque compte se connecte vers 07 h 55, prépare indépendamment sa page club/date/heure sans la soumettre, puis commence sa propre recherche à 08 h et poll jusqu’à 08 h 02. La première session cherche uniquement 20 h et la seconde uniquement 21 h, chacune avec son tarif, ses joueurs et sa chaîne de replis. Les deux réservations peuvent donc aboutir sur des terrains ou replis différents. Seule la première valeur de `hours` fixe le début des deux heures ; le départ à 23 h est refusé pour éviter de changer de date.
 
-Les deux réservations ne sont pas atomiques. **Toute heure confirmée est conservée, même si seule la deuxième réussit.** La recherche peut choisir un terrain où seule l’une des deux heures est encore disponible ; à préférence horaire égale, elle privilégie un terrain proposant les deux. Hermes annonce un **succès partiel** et identifie le compte et l’heure obtenue. Aucune annulation automatique d’une réservation confirmée, aucun autre club en remplacement de l’heure manquante et aucune relance de la demande terminée. Une confirmation incertaine demande de vérifier le compte concerné. Les deux comptes de réservation doivent être distincts et correspondre aux joueurs présents ; cette option ne modifie pas les quotas du site. L’application des quotas au padel reste à vérifier auprès du centre.
+Les deux réservations ne sont pas atomiques. **Toute heure confirmée est conservée, même si seule la deuxième réussit.** Une erreur, une absence ou une confirmation de l’une n’annule pas, ne bloque pas et ne relance pas l’autre. Hermes annonce un **succès partiel** et identifie le compte et l’heure obtenue. Aucune annulation automatique d’une réservation confirmée et aucune relance de la demande terminée. Une confirmation incertaine demande de vérifier le compte concerné. Les deux comptes de réservation doivent être distincts et correspondre aux joueurs présents ; cette option ne modifie pas les quotas du site. L’application des quotas au padel reste à vérifier auprès du centre.
 
 Le dry-run teste les deux parcours en parallèle et annule chaque pré-réservation avec son propre compte, même si l’autre parcours échoue. Il ne confirme aucun paiement. Deux annulations vérifiées sont nécessaires pour valider le test complet. Deux confirmations réelles produisent `event-1.ics` et `event-2.ics`, ainsi qu’une notification par réservation si ntfy est activé. Sans `consecutive`, le fonctionnement reste celui d’une réservation. Le format JSON reste identique ; aucun champ supplémentaire n’est nécessaire pour le parallélisme.
 
@@ -297,8 +297,8 @@ Ajouter cette option au même niveau que `sport`, `players` et `fallbacks` :
 
 ```json
 "polling": {
-  "intervalSeconds": 2,
-  "durationSeconds": 600,
+  "intervalSeconds": 1,
+  "durationSeconds": 120,
   "fallbackMode": "after-window"
 }
 ```
@@ -322,11 +322,11 @@ Dans `config.fixed.json`, les comptes qui réservent restent dans `bookingAccoun
 }
 ```
 
-- Bloc absent ou entièrement vide : le compte choisi pour réserver est utilisé (le premier du tableau pour le monitoring autonome).
-- Bloc complet : le monitoring et les recherches répétées utilisent `monitoringAccount`. À la détection d’un créneau compatible, sa session navigateur est fermée ; une session distincte se connecte au compte choisi pour réserver et refait la recherche avant toute sélection.
-- Bloc incomplet ou connexion refusée : une erreur est signalée ; le script ne remplace pas discrètement le compte configuré par un autre compte.
+- Bloc absent ou entièrement vide : le monitoring autonome utilise le premier compte de réservation.
+- Bloc complet : seul le monitoring autonome utilise `monitoringAccount`.
+- Les tentatives de réservation ignorent toujours ce bloc : elles se connectent à 07 h 55 avec le compte choisi, préparent la page du club, puis lancent la recherche à 08 h dans cette même session.
 
-Si le compte de monitoring et le compte choisi pour réserver ont la même adresse, une seule identité est utilisée pour ce parcours. La Gratuité et les autres tarifs sont vérifiés avec le compte qui réserve, car les droits des deux comptes peuvent différer. Si le créneau a disparu ou n’est pas compatible avec le compte principal, les recherches reprennent avec le compte de monitoring ; ces mêmes créneaux ne déclenchent pas une nouvelle connexion au principal avant trente secondes. Les replis padel → tennis et le dry-run conservent cette séparation.
+La Gratuité et les autres tarifs sont vérifiés directement avec le compte qui réserve. Les recherches répétées et les replis padel → tennis restent dans cette même session ; aucune bascule vers le compte de monitoring n’a lieu.
 
 Le monitoring autonome de Jules Ladoumègue utilise aussi ce bloc. Son rapport indique `monitoring` ou `booking` pour préciser le compte employé, sans exposer ses identifiants. Les commandes de liste et d’annulation utilisent le compte choisi par `--account "Nom"`, ou le premier compte du tableau si ce paramètre est absent. Le bloc fonctionne aussi dans l’ancien `config.json` ; ne jamais commiter ces fichiers privés.
 
