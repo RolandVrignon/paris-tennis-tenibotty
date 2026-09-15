@@ -25,6 +25,7 @@ test('prepared Hermes jobs contain no fixed credentials and can be managed', asy
     repositoryDirectory: root,
     nodeBinary: '/opt/node/bin/node',
     fixedConfigPath,
+    readLinuxCrontab: () => '',
     now: dayjs('2026-09-11T12:00:00+02:00'),
   }
   const prepared = await prepareBookingJob({
@@ -69,4 +70,16 @@ test('prepared Hermes jobs contain no fixed credentials and can be managed', asy
   assert.equal(cancelBookingJob(prepared.requestId, options).status, 'cancelled')
   assert.throws(() => claimBookingJob(prepared.requestId, options), /cannot run/)
   assert.equal(listBookingJobs(options).length, 1)
+})
+
+test('preflight blocks preparation before configuration or request state is touched', async () => {
+  let crontabReads = 0
+  await assert.rejects(() => prepareBookingJob({}, {
+    fixedConfigPath: '/does/not-exist/config.fixed.json',
+    readLinuxCrontab: () => {
+      crontabReads += 1
+      return '45 7 * * * /home/me/par-ici-tennis/scripts/run-booking-2026-09-15.sh\n'
+    },
+  }), /Competing Paris Tennis automation.*crontab -e.*Hermes/s)
+  assert.equal(crontabReads, 1)
 })

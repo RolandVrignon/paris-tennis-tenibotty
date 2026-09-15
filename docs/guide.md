@@ -484,7 +484,9 @@ chmod 600 /chemin/demande.json
 npm run booking:manage -- prepare --input /chemin/demande.json
 ```
 
-`prepare` crée une demande locale et un script de lancement ; **il ne crée pas le cron Hermes**. La réponse fournit notamment `requestId`, `schedule`, `bookingOpensAt`, `cronName` et `script`.
+`prepare` commence par inspecter le crontab Linux et refuse de créer une demande si une ancienne automatisation Paris Tennis active y est trouvée. La retirer avec `crontab -e` avant de réessayer : **Hermes, via `booking-manager`, doit rester l’unique scheduler des réservations**. Les entrées commentées et les tâches sans rapport ne bloquent pas.
+
+Après ce contrôle, `prepare` crée une demande locale et un script de lancement géré par Hermes ; **il ne crée pas lui-même le cron Hermes**. La réponse fournit notamment `requestId`, `schedule`, `bookingOpensAt`, `cronName` et `script`.
 
 Le [skill Hermes](../skills/tennis-booking/SKILL.md) décrit la création du cron avec ces valeurs, `no_agent=true`, le dossier de travail du dépôt et la livraison au chat d’origine. Une fois le cron créé :
 

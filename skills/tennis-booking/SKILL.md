@@ -155,7 +155,7 @@ Set `dryRun=true` only for a requested test. Do not include `account`, `priceTyp
 node '{{PROJECT_DIR}}/scripts/booking-manager.js' prepare --input /tmp/tennis-booking-request-<unique-id>.json --consume
 ```
 
-Use the helper's `schedule`, `cronName`, `script`, and `requestId` exactly. It computes six calendar days before the target in Europe/Paris, including DST, with browser login at 07:55 and slot searches starting no earlier than 08:00. Never run `index.js` directly to schedule a real booking.
+Use the helper's `schedule`, `cronName`, `script`, and `requestId` exactly. Before creating request state, the helper rejects active competing Paris Tennis automation in the Linux crontab and tells the operator to remove it with `crontab -e`; report that block and do not bypass it. It computes six calendar days before the target in Europe/Paris, including DST, with browser login at 07:55 and slot searches starting no earlier than 08:00. Never run `index.js` directly to schedule a real booking.
 
 Call Hermes `cronjob` with `action=create`, the returned `schedule`, `name=cronName`, `script`, `no_agent=true`, and `workdir={{PROJECT_DIR}}`. Omit `deliver` to preserve delivery to the originating chat/topic. Create only a one-shot job. Do not edit the Linux crontab.
 

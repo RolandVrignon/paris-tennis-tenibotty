@@ -9,7 +9,7 @@ const fixture = t => {
   const root = mkdtempSync(join(tmpdir(), 'tennis-runner-test-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   for (const dir of ['lib', 'scripts', 'state', 'hermes/scripts']) mkdirSync(join(root, dir), { recursive: true })
-  for (const file of ['lib/search-window.js', 'lib/sport.js', 'lib/booking-request.js', 'lib/config.js', 'lib/booking-job.js', 'lib/clubs.js', 'lib/site-session.js', 'lib/captcha.js', 'lib/huggingface.js', 'lib/operation-lock.js', 'lib/booking-result.js', 'scripts/run-booking-request.js']) copyFileSync(file, join(root, file))
+  for (const file of ['lib/search-window.js', 'lib/sport.js', 'lib/booking-request.js', 'lib/config.js', 'lib/booking-job.js', 'lib/linux-cron-preflight.js', 'lib/clubs.js', 'lib/site-session.js', 'lib/captcha.js', 'lib/huggingface.js', 'lib/operation-lock.js', 'lib/booking-result.js', 'scripts/run-booking-request.js']) copyFileSync(file, join(root, file))
   symlinkSync(resolve('node_modules'), join(root, 'node_modules'))
   writeFileSync(join(root, 'package.json'), '{"type":"module"}')
   writeFileSync(join(root, 'config.fixed.json'), JSON.stringify({ account: { email: 'test@example.test', password: 'fixture-only' }, priceType: ['Gratuité'] }))
