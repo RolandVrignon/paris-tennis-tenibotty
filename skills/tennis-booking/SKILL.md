@@ -30,6 +30,14 @@ Use `courtSelection: "first"` when the user requests the first compatible court 
 
 This option applies to the clubs of its choice. Fallbacks inherit it unless they explicitly override it; different per-club settings require separate ordered choices. Show the selected mode and allowed court types in the request summary. Preserve it during request edits. Do not enable it globally for unrelated clubs or change private request files merely because the code now supports it.
 
+## Help the user maximize booking chances
+
+Before preparing or editing a booking request, give the user a short French optimization note. Read `references/request-optimization.md` and compare the request with its checklist. Explain only the changes that could materially help this request, in plain language. If the request is already optimized, say so briefly instead of inventing more options.
+
+Distinguish a **strict request**, which keeps an exact club, hour and court type, from a **maximum-chances request**, which can include several genuinely acceptable hours or clubs and can select the first compatible court. Never silently widen the request. Ask which tradeoffs the user accepts when that is missing, then encode only those accepted choices. Treat `courtSelection: "first"`, `courtType: "any"`, additional hours, fallbacks, consecutive hours and additional accounts as independent choices; one does not authorize another.
+
+In the final request summary, include a compact `Optimisation des chances` block stating the effective hour order, club/fallback order, court selection and type, opening polling window, accounts and compatible-credit result. Mention that availability, site response time and CAPTCHA still prevent any guarantee. Do not recommend sub-second polling, competing schedulers, proxy rotation, invented players, account substitution or bypassing site rules.
+
 ## Ordered sport fallbacks
 
 A request can include `fallbacks`, an ordered array of choices. Each entry requires `sport` and `locations`; optional `hours` and `courtType` default to the primary choice's values. Keep `date`, `players`, account, tariff and `dryRun` at request level. For padel first and tennis second at 20h, use primary `sport: "padel"`, `locations: ["Padel Jules Ladoumègue"]`, `hours: ["20"]`, plus `fallbacks: [{"sport":"tennis","locations":["Edouard Pailleron"]}]`.
