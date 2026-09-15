@@ -36,7 +36,9 @@ try {
       if (consume) rmSync(inputPath, { force: true })
     }
   } else if (command === 'attach') {
-    print(attachCronJob(getArgument('--request-id'), getArgument('--cron-job-id')))
+    const warmupIndex = args.indexOf('--captcha-warmup-cron-job-id')
+    const attachments = warmupIndex === -1 ? {} : { captchaWarmupCronJobId: getArgument('--captcha-warmup-cron-job-id') }
+    print(attachCronJob(getArgument('--request-id'), getArgument('--cron-job-id'), {}, attachments))
   } else if (command === 'list') {
     print(listBookingJobs())
   } else if (command === 'show') {

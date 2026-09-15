@@ -40,6 +40,7 @@
     "availability:monitor": "node scripts/monitor-availability.js",
     "accounts:list": "node scripts/tennis.js accounts list",
     "credits:list": "node scripts/tennis.js credits list",
+    "captcha:warmup": "node scripts/warm-captcha-space.js",
     "reservation:transfer": "node scripts/transfer-reservation.js"
   },
   "dependencies": {

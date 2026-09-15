@@ -120,7 +120,10 @@ try {
   process.exitCode = outcome === 'confirmed' ? 0 : 1
 } finally {
   if (temporaryDirectory) rmSync(temporaryDirectory, { recursive: true, force: true })
-  if (claimed) rmSync(join(options.hermesScriptsDirectory, `tennis-booking-${record.id}.sh`), { force: true })
+  if (claimed) {
+    rmSync(join(options.hermesScriptsDirectory, `tennis-booking-${record.id}.sh`), { force: true })
+    rmSync(join(options.hermesScriptsDirectory, `tennis-captcha-warmup-${record.id}.sh`), { force: true })
+  }
   release()
   process.removeListener('SIGTERM', interrupt)
   process.removeListener('SIGINT', interrupt)

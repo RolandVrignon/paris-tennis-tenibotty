@@ -452,10 +452,11 @@ L’expiration est journalisée et enregistrée avec `openingReviewRequired: tru
 
 1. Le helper valide la date, les clubs, les heures et les partenaires.
 2. Il calcule l’ouverture **six jours calendaires avant la date du terrain**, en `Europe/Paris`, en recalculant les décalages été/hiver.
-3. Hermes crée un job ponctuel pour **7 h 55**, avec `no_agent=true` : aucun modèle ne décide quoi réserver au moment du lancement.
-4. Chromium démarre à **7 h 55**, se connecte et attend **8 h** avant de commencer la recherche.
-5. Si `polling` est activé, les recherches se répètent au plus tôt à l’intervalle demandé, jusqu’à sélection ou expiration de la fenêtre. Chaque réponse et son affichage sont attendus ; une recherche lente retarde la suivante. En mode `after-window`, les replis sont essayés une fois après expiration.
-6. Le résultat est remis au chat/topic Telegram d’origine via Hermes.
+3. Hermes crée un job ponctuel indépendant pour **7 h 54** afin de préchauffer le Space CAPTCHA avec un fixture synthétique, sans navigateur, compte Paris Tennis ni verrou de réservation.
+4. Hermes crée le job de réservation pour **7 h 55**, avec `no_agent=true` : aucun modèle ne décide quoi réserver au moment du lancement.
+5. Chromium démarre à **7 h 55**, se connecte et attend **8 h** avant de commencer la recherche.
+6. Si `polling` est activé, les recherches se répètent au plus tôt à l’intervalle demandé, jusqu’à sélection ou expiration de la fenêtre. Chaque réponse et son affichage sont attendus ; une recherche lente retarde la suivante. En mode `after-window`, les replis sont essayés une fois après expiration.
+7. Le résultat est remis au chat/topic Telegram d’origine via Hermes.
 
 **8 h est l’heure prévue de début des recherches, pas une garantie de confirmation à 8 h.** Le réseau, la connexion, le CAPTCHA et la disponibilité du terrain influencent le résultat. Le lanceur refuse un départ plus de dix minutes avant l’ouverture, ou après la fin de la fenêtre si `polling` est activé (sinon, après une heure).
 
@@ -487,13 +488,15 @@ npm run booking:manage -- prepare --input /chemin/demande.json
 
 `prepare` commence par inspecter le crontab Linux et refuse de créer une demande si une ancienne automatisation Paris Tennis active y est trouvée. La retirer avec `crontab -e` avant de réessayer : **Hermes, via `booking-manager`, doit rester l’unique scheduler des réservations**. Les entrées commentées et les tâches sans rapport ne bloquent pas.
 
-Après ce contrôle, `prepare` crée une demande locale et un script de lancement géré par Hermes ; **il ne crée pas lui-même le cron Hermes**. La réponse fournit notamment `requestId`, `schedule`, `bookingOpensAt`, `cronName` et `script`.
+Après ce contrôle, `prepare` crée une demande locale, le script de réservation et un script indépendant de préchauffage CAPTCHA ; **il ne crée pas lui-même les crons Hermes**. La réponse fournit notamment `requestId`, `schedule`, `bookingOpensAt`, `cronName`, `script` et `captchaWarmup` (07 h 54).
 
 Le [skill Hermes](../skills/tennis-booking/SKILL.md) décrit la création du cron avec ces valeurs, `no_agent=true`, le dossier de travail du dépôt et la livraison au chat d’origine. Une fois le cron créé :
 
 ```sh
-npm run booking:manage -- attach --request-id 'ID_DE_DEMANDE' --cron-job-id 'ID_DU_CRON_HERMES'
+npm run booking:manage -- attach --request-id 'ID_DE_DEMANDE' --cron-job-id 'ID_DU_CRON_HERMES' --captcha-warmup-cron-job-id 'ID_DU_CRON_WARMUP'
 ```
+
+Le job CAPTCHA appelle `scripts/warm-captcha-space.js` une seule fois avec `fixtures/captcha-warmup.png` ; la même vérification peut être lancée manuellement avec `npm run captcha:warmup`. Il n’utilise ni `flock`, ni le dossier d’état des réservations, ni Playwright. Il ferme sa connexion Gradio et retourne sans bloquer la réservation même si Hugging Face est indisponible. Si 07 h 54 est déjà passé, Hermes programme quand même le job principal et signale simplement l’absence de préchauffage.
 
 L’option `prepare --consume` supprime le fichier d’entrée même si la préparation échoue. Elle est réservée aux fichiers `/tmp/tennis-booking-request-*.json` utilisés par Hermes.
 

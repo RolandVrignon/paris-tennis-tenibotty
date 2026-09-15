@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -38,19 +38,27 @@ test('prepared Hermes jobs contain no fixed credentials and can be managed', asy
 
   assert.equal(prepared.schedule, '2026-09-15T07:55:00+02:00')
   assert.equal(prepared.bookingOpensAt, '2026-09-15T08:00:00+02:00')
+  assert.equal(prepared.captchaWarmup.scheduleAt, '2026-09-15T07:54:00+02:00')
   const requestFile = join(stateDirectory, `${prepared.requestId}.json`)
   const wrapperFile = join(hermesScriptsDirectory, prepared.script)
+  const captchaWarmupWrapperFile = join(hermesScriptsDirectory, prepared.captchaWarmup.script)
   const requestContent = readFileSync(requestFile, 'utf8')
   const wrapperContent = readFileSync(wrapperFile, 'utf8')
+  const captchaWarmupWrapperContent = readFileSync(captchaWarmupWrapperFile, 'utf8')
   assert.doesNotMatch(requestContent, /never-copy-this-secret/)
   assert.doesNotMatch(wrapperContent, /never-copy-this-secret/)
+  assert.doesNotMatch(captchaWarmupWrapperContent, /never-copy-this-secret|flock|operation-lock|run-booking-request/)
+  assert.match(captchaWarmupWrapperContent, /warm-captcha-space\.js/)
   assert.equal(statSync(requestFile).mode & 0o777, 0o600)
   assert.equal(statSync(wrapperFile).mode & 0o777, 0o700)
+  assert.equal(statSync(captchaWarmupWrapperFile).mode & 0o777, 0o700)
   assert.equal(spawnSync('bash', ['-n', wrapperFile]).status, 0)
+  assert.equal(spawnSync('bash', ['-n', captchaWarmupWrapperFile]).status, 0)
 
-  const attached = attachCronJob(prepared.requestId, 'hermes-job-123', options)
+  const attached = attachCronJob(prepared.requestId, 'hermes-job-123', options, { captchaWarmupCronJobId: 'hermes-warmup-123' })
   assert.equal(attached.status, 'scheduled')
   assert.equal(attached.cronJobId, 'hermes-job-123')
+  assert.equal(attached.captchaWarmup.cronJobId, 'hermes-warmup-123')
   assert.equal(listBookingJobs(options).length, 1)
 
   await assert.rejects(() => prepareBookingJob({
@@ -68,6 +76,8 @@ test('prepared Hermes jobs contain no fixed credentials and can be managed', asy
   assert.deepEqual(edited.request.locations, ['Max Rousié'])
   assert.throws(() => removeBookingJob(prepared.requestId, options), /Only unscheduled/)
   assert.equal(cancelBookingJob(prepared.requestId, options).status, 'cancelled')
+  assert.equal(existsSync(wrapperFile), false)
+  assert.equal(existsSync(captchaWarmupWrapperFile), false)
   assert.throws(() => claimBookingJob(prepared.requestId, options), /cannot run/)
   assert.equal(listBookingJobs(options).length, 1)
 })

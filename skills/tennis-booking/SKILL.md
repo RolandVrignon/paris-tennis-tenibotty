@@ -48,7 +48,9 @@ The runner tries the next choice only when no compatible slot was selected. It s
 
 ## Opening search window
 
-For opening-time searches, use request-level `polling: {"intervalSeconds":1,"durationSeconds":120,"fallbackMode":"after-window"}`. Preserve explicit request settings unless the user changes them. Without polling, execution remains single-pass. Start both selected booking sessions at 07:55 so each is already on its club results agenda by 07:59 (`page=recherche&action=rechercher_creneau`). Warmup submits only a read-only search, using an exposed earlier date if the target date is absent. Never select a slot or enter checkout before the stored opening.
+For opening-time searches, use request-level `polling: {"intervalSeconds":1,"durationSeconds":120,"fallbackMode":"after-window"}`. Preserve explicit request settings unless the user changes them. Without polling, execution remains single-pass. At 07:54, run the helper's separate best-effort CAPTCHA warmup once; it sends only the repository's synthetic fixture to the configured Hugging Face Space. At 07:55, start both selected booking sessions so each is already on its club results agenda by 07:59 (`page=recherche&action=rechercher_creneau`). Agenda warmup submits only a read-only search, using an exposed earlier date if the target date is absent. Never select a slot or enter checkout before the stored opening.
+
+The CAPTCHA warmup is a distinct no-agent Hermes job. Its generated wrapper has no booking `flock`, operation lock, browser, account login or Paris Tennis request. It closes its Gradio client after one bounded inference and exits successfully after provider/configuration failure, so it can overlap 07:55 without delaying or blocking the booking job. It warms the shared remote Space for every concurrent leg; never create one warmup per account. This reduces cold-start risk but does not reuse a Gradio connection or guarantee latency.
 
 At 08:00, reload that same native results document every second at most. Wait for each response/render before the next refresh, and stop primary polling at 08:02. The exact requested `dateiso` must appear in the visible agenda of the correct club; never use the last position, hidden date picker or another club's dates. Select the date through its native click and wait for its slot response. Read exact-date/hour booking buttons, not just the daily count: the live site can display a full header with bookable slots. When the target date was absent at warmup, a second tab prepares the club's native search form in the same authenticated context. A disabled new date uses that spare form once and checkout continues in that tab. If the spare document was replaced, use a fresh native search. Neither tab selects a slot before opening, and the idle original tab never books independently.
 
@@ -173,17 +175,19 @@ Set `dryRun=true` only for a requested test. Do not include `account`, `priceTyp
 node '{{PROJECT_DIR}}/scripts/booking-manager.js' prepare --input /tmp/tennis-booking-request-<unique-id>.json --consume
 ```
 
-Use the helper's `schedule`, `cronName`, `script`, and `requestId` exactly. Before creating request state, the helper rejects active competing Paris Tennis automation in the Linux crontab and tells the operator to remove it with `crontab -e`; report that block and do not bypass it. It computes six calendar days before the target in Europe/Paris, including DST, with browser login and agenda loading at 07:55, then refreshes and slot selection starting no earlier than 08:00. Never run `index.js` directly to schedule a real booking.
+Use the helper's `schedule`, `cronName`, `script`, `captchaWarmup`, and `requestId` exactly. Before creating request state, the helper rejects active competing Paris Tennis automation in the Linux crontab and tells the operator to remove it with `crontab -e`; report that block and do not bypass it. It computes six calendar days before the target in Europe/Paris, including DST: CAPTCHA warmup at 07:54, browser login and agenda loading at 07:55, then refresh and slot selection starting no earlier than 08:00. Never run `index.js` directly to schedule a real booking.
 
-Call Hermes `cronjob` with `action=create`, the returned `schedule`, `name=cronName`, `script`, `no_agent=true`, and `workdir={{PROJECT_DIR}}`. Omit `deliver` to preserve delivery to the originating chat/topic. Create only a one-shot job. Do not edit the Linux crontab.
+If `captchaWarmup.scheduleAt` is still in the future, first call Hermes `cronjob` with `action=create`, that schedule, `name=captchaWarmup.cronName`, `script=captchaWarmup.script`, `no_agent=true`, `repeat=1` and `workdir={{PROJECT_DIR}}`. This cron is best effort and needs no delivery. If it cannot be created or its time has passed, continue scheduling the booking and report that cold-start mitigation is absent.
 
-Then attach the returned job ID:
+Then call Hermes `cronjob` with `action=create`, the returned booking `schedule`, `name=cronName`, `script`, `no_agent=true`, `repeat=1`, and `workdir={{PROJECT_DIR}}`. Omit `deliver` to preserve delivery to the originating chat/topic. Do not edit the Linux crontab.
+
+Attach the booking job ID and, only when created, the warmup job ID:
 
 ```sh
-node '{{PROJECT_DIR}}/scripts/booking-manager.js' attach --request-id <requestId> --cron-job-id <job_id>
+node '{{PROJECT_DIR}}/scripts/booking-manager.js' attach --request-id <requestId> --cron-job-id <booking_job_id> --captcha-warmup-cron-job-id <warmup_job_id>
 ```
 
-If cron creation fails, `cleanup --request-id <requestId>` removes an unscheduled prepared request. If attachment fails after cron creation, remove the new Hermes cron first and reconcile the local request. Never leave an unattached active cron without telling the user.
+Omit the last flag when no warmup cron exists. If booking cron creation fails, remove a newly created warmup cron, then `cleanup --request-id <requestId>`. If attachment fails after cron creation, remove both new Hermes crons first and reconcile the local request. Never leave an unattached active cron without telling the user.
 
 ## Manage future requests
 
@@ -223,7 +227,7 @@ To cancel a future request, after the user's explicit instruction:
 node '{{PROJECT_DIR}}/scripts/booking-manager.js' cancel --request-id <id>
 ```
 
-This disables local execution and retains its audit record. Then remove the associated Hermes cron with `cronjob action=remove` and its `cronJobId`. If Hermes removal fails, explain that local execution is disabled but the cron still needs removal. This does not cancel an already confirmed account reservation. Running requests cannot be cancelled this way.
+This disables local execution and retains its audit record. Then remove the associated Hermes booking cron with `cronjob action=remove` and its `cronJobId`, plus `captchaWarmup.cronJobId` when present and still scheduled. If Hermes removal fails, explain that local execution is disabled but the cron still needs removal. This does not cancel an already confirmed account reservation. Running requests cannot be cancelled this way.
 
 Also remove the matching `Tennis credits — <requestId>` reminder, if present, after cancelling a future request. Never remove another request's reminder. Report a removal failure; the reminder's pending-status check prevents a cancelled booking from producing a credit warning.
 

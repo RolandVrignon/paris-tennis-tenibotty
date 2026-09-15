@@ -173,7 +173,8 @@ Le gestionnaire calcule son lancement **six jours calendaires avant la date du t
 | --- | --- |
 | **Tu prépares la demande** | Les clubs, horaires, types de courts et partenaires sont validés. |
 | **Hermes programme** | Il crée un cron ponctuel, attache son identifiant à la demande et vérifie la tâche. |
-| **07 h 55, à J−6 du match** | Chromium démarre sur le VPS, se connecte, puis attend l’heure prévue. |
+| **07 h 54, à J−6 du match** | Un job indépendant envoie un CAPTCHA synthétique au Space Hugging Face pour réduire le risque de démarrage à froid. |
+| **07 h 55** | Chromium démarre sur le VPS, se connecte, puis attend l’heure prévue. |
 | **08 h 00** | La recherche commence ; avec `polling`, elle se répète dans la fenêtre configurée. |
 | **Après la tentative** | Le résultat revient au chat ou topic Telegram d’origine via Hermes. |
 
@@ -498,6 +499,8 @@ Les notifications sont configurables dans `config.fixed.json`. Une erreur de not
 ### CAPTCHA : automatique quand possible, manuel en secours
 
 L’intégration tente de reconnaître les CAPTCHAs textuels lorsqu’ils apparaissent via un Space Hugging Face configuré. Le code utilise son accès public **sans clé API** et transmet seulement l’image du CAPTCHA. La disponibilité du fournisseur et la reconnaissance ne sont pas garanties.
+
+Pour une demande Hermes à l’ouverture, un job ponctuel distinct préchauffe le Space à **07 h 54** avec l’image synthétique versionnée dans le dépôt. Il ne contacte pas Paris Tennis, ne démarre aucun navigateur et ne prend aucun verrou de réservation. Son échec ou sa lenteur ne bloque donc pas le lancement des sessions à 07 h 55. Une seule inférence suffit pour les deux sessions parallèles ; la connexion Gradio est ensuite fermée. Ce préchauffage réduit le risque de réveil du modèle sans supprimer la file d’attente ou la latence réseau.
 
 En cas d’échec, le mode visible permet une saisie manuelle dans le délai de l’étape. En headless, l’exécution s’arrête. Les puzzles de sélection d’images ne sont pas pris en charge. Un lancement pendant ton sommeil peut donc échouer sans intervention.
 
