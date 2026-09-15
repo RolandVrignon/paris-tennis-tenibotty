@@ -13,7 +13,7 @@ import { getBookingTargets, buildBookingConfig } from './lib/booking-request.js'
 import { normalizePolling, parseSearchStart, searchAttempts } from './lib/search-window.js'
 import { resolveBookingProfile, VARIABLE_CONFIG_KEYS } from './lib/config.js'
 import { authenticatePage } from './lib/site-session.js'
-import { prepareBookingTarget, searchBookingTarget, clickBookingCandidate } from './lib/booking-search.js'
+import { prepareBookingTarget, prepareOpeningAgenda, searchBookingTarget, clickBookingCandidate } from './lib/booking-search.js'
 import { preparePayment } from './lib/payment.js'
 import { consecutiveLegTargets, runConsecutiveLegs } from './lib/consecutive.js'
 
@@ -79,11 +79,13 @@ const bookTennis = async (config, { leg = 0, targetsOverride, searchStartOverrid
 
     const date = config.date ? dayjs(config.date, 'D/MM/YYYY') : dayjs().add(6, 'days')
     const searchUrl = 'https://tennis.paris.fr/tennis/jsp/site/Portal.jsp?page=recherche&view=recherche_creneau#!'
-    let prepared = await prepareBookingTarget(page, {
+    const warmup = searchStart > Date.now() ? prepareOpeningAgenda : prepareBookingTarget
+    let prepared = await warmup(page, {
       target: targets[0],
       date, polling, captchaOptions, searchUrl,
     })
-    console.log(`${dayjs().format()} - Primary search prepared with booking account; waiting for opening`)
+    console.log(`${dayjs().format()} - Primary ${prepared.agenda ? 'agenda' : 'search form'} ready with booking account; waiting for opening`)
+    if (prepared.agenda && Date.now() > searchStart - 60000) console.warn(`${dayjs().format()} - Agenda warmup finished less than one minute before opening; check startup/login latency`)
 
     console.log(`${dayjs().format()} - Connected; search starts at ${new Date(searchStart).toISOString()}${polling ? `, interval ${polling.intervalSeconds}s, window ${polling.durationSeconds}s` : ''}`)
     locationsLoop:
@@ -104,7 +106,7 @@ const bookTennis = async (config, { leg = 0, targetsOverride, searchStartOverrid
         }
         throw error
       }
-      prepared = undefined
+      if (!prepared?.agenda) prepared = undefined
       if (deadline && Date.now() >= deadline) continue
       if (!result.dateSelectable) {
         console.log(`${dayjs().format()} - Requested date not yet selectable for ${logLocation}`)

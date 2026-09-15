@@ -34,9 +34,13 @@ The runner tries the next choice only when no compatible slot was selected. It s
 
 ## Opening search window
 
-For repeated opening-time searches, add request-level `polling: {"intervalSeconds":1,"durationSeconds":120,"fallbackMode":"after-window"}`. Preserve this field when editing an existing request. Without it, searches remain single-pass. The browser logs in during the 07:55 warmup, then waits for the stored 08:00 opening before searching. The two-minute deadline is anchored to that opening, even when startup is late.
+For opening-time searches, use request-level `polling: {"intervalSeconds":1,"durationSeconds":120,"fallbackMode":"after-window"}`. Preserve explicit request settings unless the user changes them. Without polling, execution remains single-pass. Start both selected booking sessions at 07:55 so each is already on its club results agenda by 07:59 (`page=recherche&action=rechercher_creneau`). Warmup submits only a read-only search, using an exposed earlier date if the target date is absent. Never select a slot or enter checkout before the stored opening.
 
-The user prefers padel searches throughout the window, then one tennis fallback sweep: use `after-window`. Each search waits for its response and rendered slots or explicit empty results; the next starts no sooner than one second after the previous start and never overlaps it. A late opening at 08:00:30 can therefore be found. The final fallback sweep and checkout can finish after 08:02. Use `each-cycle` only when the user explicitly wants to accept a fallback during the window.
+At 08:00, reload that same native results document every second at most. Wait for each response/render before the next refresh, and stop primary polling at 08:02. The exact requested `dateiso` must appear in the visible agenda of the correct club; never use the last position, hidden date picker or another club's dates. Select the date through its native click and wait for its slot response. Read exact-date/hour booking buttons, not just the daily count: the live site can display a full header with bookable slots. A disabled target day requires one native form search for that date, then subsequent refreshes reuse its results.
+
+Only a marked, current native search-results document may be reloaded. Redirects, replaced documents, expired authentication and failed reloads stop the run; do not replay a reservation or payment page. No monitoring-account login or account switch gates scheduled booking. See `references/opening-warmup-direct-booking.md` for regression cases and timing boundaries.
+
+Keep primary padel polling through the configured window, then one tennis fallback sweep (`after-window`). The deadline remains anchored to opening even if startup is late. Fallback and checkout may finish after 08:02. Use `each-cycle` only when explicitly requested. Being ready by 07:59 depends on successful startup/login; report a delayed or failed warmup rather than promising exact-second confirmation.
 
 On window expiration, the request records `openingReviewRequired: true` and the Hermes result includes an opening-review message, even if the fallback succeeds. Use the timestamped log to investigate; empty results do not prove that the opening rule is wrong. Do not silently change the schedule or claim monitoring has been reconfigured. No new monitoring task is automatically created by this flag. CAPTCHA and checkout errors still stop the attempt; never repeat a submitted reservation.
 
@@ -155,7 +159,7 @@ Set `dryRun=true` only for a requested test. Do not include `account`, `priceTyp
 node '{{PROJECT_DIR}}/scripts/booking-manager.js' prepare --input /tmp/tennis-booking-request-<unique-id>.json --consume
 ```
 
-Use the helper's `schedule`, `cronName`, `script`, and `requestId` exactly. Before creating request state, the helper rejects active competing Paris Tennis automation in the Linux crontab and tells the operator to remove it with `crontab -e`; report that block and do not bypass it. It computes six calendar days before the target in Europe/Paris, including DST, with browser login at 07:55 and slot searches starting no earlier than 08:00. Never run `index.js` directly to schedule a real booking.
+Use the helper's `schedule`, `cronName`, `script`, and `requestId` exactly. Before creating request state, the helper rejects active competing Paris Tennis automation in the Linux crontab and tells the operator to remove it with `crontab -e`; report that block and do not bypass it. It computes six calendar days before the target in Europe/Paris, including DST, with browser login and agenda loading at 07:55, then refreshes and slot selection starting no earlier than 08:00. Never run `index.js` directly to schedule a real booking.
 
 Call Hermes `cronjob` with `action=create`, the returned `schedule`, `name=cronName`, `script`, `no_agent=true`, and `workdir={{PROJECT_DIR}}`. Omit `deliver` to preserve delivery to the originating chat/topic. Create only a one-shot job. Do not edit the Linux crontab.
 
@@ -173,6 +177,29 @@ If cron creation fails, `cleanup --request-id <requestId>` removes an unschedule
 node '{{PROJECT_DIR}}/scripts/booking-manager.js' list
 node '{{PROJECT_DIR}}/scripts/booking-manager.js' show --request-id <id>
 ```
+
+### Reconcile schedulers and investigate unexpected locks
+
+Hermes cron state is not sufficient evidence that no other booking automation exists. When an attempt reports a competing operation, or before scheduling after a legacy/manual installation has been detected, reconcile **all scheduler namespaces**: Hermes jobs and outputs, user/system crontabs, user/system systemd timers, and repository wrapper scripts referenced by them. Use `references/scheduler-lock-forensics.md` for the safe evidence order, provenance checklist, exact-entry cleanup procedure, and secret-safe crontab reporting rules.
+
+Use Hermes one-shot jobs created from `booking-manager` as the single booking scheduler. Never create a parallel Linux crontab entry for the same request. If a legacy entry is found, first inspect its owning process, lock metadata, logs, request state, and every selected account's live reservations. Only then disable the obsolete entry and close any orphaned local request; never delete or bypass a lock merely because the expected Hermes cron is absent.
+
+When tracing origin, combine scheduler references, file metadata, Git history (`git log --follow -- <script>`), and session history. State conclusions at the strength supported by evidence: commit author metadata identifies the Git identity, but does not by itself prove which human or agent initiated the automation.
+
+### Recover an opening-time attempt blocked before startup
+
+The generated wrapper has a non-blocking `/tmp/par-ici-tennis-booking.lock` in addition to the state-directory operation lock. Exit code `75` with `Une autre réservation Paris Tennis est déjà en cours` means the wrapper lost that outer lock **before** `run-booking-request.js` claimed or submitted the request. It may have overlapped a read-only monitor or another booking process; do not assume the state record or cron list alone identifies the owner.
+
+Before any user-authorized immediate recovery:
+
+1. Confirm the request is still `scheduled` rather than `running` or a terminal/uncertain status, and confirm the one-shot cron has finished and will not run again.
+2. Check for a live Paris Tennis/Playwright process. Do not remove or bypass either lock while an owning process may still be alive.
+3. Reconcile live reservations on **every selected booking account**. Continue only when all are readable and none contains the target reservation. An unread account or any possible submission requires reconciliation, not a replay.
+4. Resolve the requested club again and repeat required credit checks if the recovery changes sport, club, court type, tariff or accounts.
+
+`booking-manager edit` intentionally rejects an expired opening time. Do not mutate the persisted request JSON to bypass that guard. If the user explicitly authorizes an immediate attempt after the safe pre-start failure above, create a mode-600 temporary variable request containing the exact desired choice and run it in isolation with `TENNIS_REQUEST_CONFIG_PATH=<temporary-file> node index.js`; this is an immediate attempt, not scheduling. Remove the temporary file afterward. Never use this path after a selection, checkout, interruption, `running`, `needs_reconciliation`, or any uncertain result. Once the immediate attempt is reconciled, cancel/close the stale local automation record so it no longer misleadingly appears active; do not attach a new cron in the past.
+
+If the isolated attempt fails before any candidate is selected, verify both the output and live reservations before reporting the outcome. A search-page timeout is not automatically uncertainty: inspect `img/failure.png`. When the requested date is visibly marked `Complet` / `Pas de disponibilité` and no slot card is present, classify the search as unavailable and note that the DOM did not expose the expected `.no-result` marker. If the screenshot is ambiguous, treat the outcome as failed/unverifiable rather than unavailable.
 
 Use Hermes `cronjob action=list` to reconcile attached jobs. `prepared` means not scheduled; `scheduled` means attached; `running` means execution has begun. `succeeded` and `succeeded_with_warnings` both mean a reservation was confirmed. For warnings, do not book again. `dry_run_succeeded` means cancellation was verified. `needs_reconciliation` requires checking the account before any new attempt. Completed and cancelled requests cannot be replayed.
 
@@ -210,11 +237,9 @@ Schedule one no-agent Hermes job running a shell wrapper in `{{PROJECT_DIR}}`, w
 
 ## Optional monitoring account
 
-The fixed configuration may contain `monitoringAccount` with `email` and `password`. Never print these values. This account is only for standalone read-only opening monitoring; scheduled booking attempts never use it.
+The fixed configuration may contain `monitoringAccount` with `email` and `password`. Never print these values. This account is **only** for standalone, read-only opening monitoring. Scheduled booking attempts always ignore it: they authenticate with the selected booking profile during warmup, prepare and search in that same session, and continue through selection and checkout without an account switch.
 
-Keep this block out of staging requests, cron prompts and variable preferences. A scheduled runner starts at 07:55 with the selected booking account, authenticates and prepares the primary sport/club/date search without submitting or selecting a slot. At 08:00 it submits the prepared form (or performs a fresh search when the date could not be prepared), then polls and books in that same session.
-
-Standalone monitoring reports `accountRole` as `monitoring` or `booking`; reservation listing and cancellation default to the first array account and accept `--account "NAME"` for another configured booking account. If the optional block is still empty, explicitly state that the scheduled monitor will continue using the main account.
+Absent or entirely empty monitoring credentials make standalone monitoring use the selected booking account (the first array entry by default). Partial credentials or authentication failure must not silently change identity. Keep this block out of staging requests, cron prompts and variable preferences. Standalone monitoring reports `accountRole` as `monitoring` or `booking`; reservation listing and cancellation default to the first array account and accept `--account "NAME"` for another configured booking account.
 
 
 ## Named booking accounts, default guests and consecutive hours
@@ -242,7 +267,9 @@ For an explicit request for two consecutive hours with two players' accounts, ad
 
 Use one prepared request and one cron. Show both account display names/ids, their tariffs, each guest list and the two hours in the user summary. Two hours must be requested explicitly; never add this option to an existing single-hour job merely because a second account was configured. Only the first value of `hours` sets the first leg; the second reservation is the immediately next hour. Both legs have independent club/sport fallbacks but keep those fixed hours. No cross-midnight start at 23h. Paid profiles require an existing compatible ticket book; the bot never purchases one. The two booking accounts must belong to distinct participating players. Do not claim extra quota or confirmed padel quota rules.
 
-There is no shared discovery. Start two separate Chromium browsers in parallel during the 07:55 warmup. Each selected booking account authenticates and prepares its own club/date/hour page without submitting; at 08:00 both independently start polling every second through 08:02. Leg 0 searches only the first requested hour and leg 1 only the following hour. Each leg retains its own account tariff, players, fallback chain, dry-run cleanup and uncertain-submission protection. Neither leg waits for, cancels or replays the other. Keep either confirmed reservation, including a second-hour-only success; never roll it back automatically. Independent fallbacks may produce different courts or sports.
+For minimum opening-time latency, consecutive booking uses **two independent booking sessions from the start of warmup**. At 07:55, launch both `bookTennis` legs concurrently: each creates its own Chromium/context/page, authenticates with its own `bookingAccount`, and loads the primary club agenda before 07:59 without selecting a slot. At 08:00, leg 0 searches only the requested first hour (for example 20h) while leg 1 searches only the next hour (21h). There is no shared discovery session and neither leg waits for the other's login, search, slot selection, checkout, failure or completion. The monitoring account is never used.
+
+Each leg independently applies the full ordered fallback chain, with every fallback constrained to that leg's fixed hour. Therefore the two successful hours may use different courts, clubs, or sports when fallbacks allow it; prioritize obtaining either requested hour over forcing a shared court. Each leg owns its polling window, tariff validation, hold, submission-safety state, dry-run cleanup and IPC result. Isolate them with settled-result orchestration so one rejection cannot cancel, block, or replay the other. Preserve either confirmed reservation, including a second-hour-only success. The single parent runner retains the global operation lock; internal legs must not reacquire it.
 
 `partially_succeeded` means only one hour is confirmed; identify which account and hour succeeded, and do not replay or automatically cancel it. `needs_reconciliation` means a submission, interrupted attempt or hold cleanup is uncertain: inspect the indicated accounts before any new action. The persisted `legs` array identifies each account and selected hour/court regardless of completion order. `dry_run_succeeded` requires two verified hold cancellations; each browser releases only its own temporary hold even if the other fails. `dry_run_partial` is not validation of both hours. Real success produces separate ICS files and optional per-reservation ntfy notifications. The `consecutive` JSON format is unchanged; no extra parallel option is needed.
 

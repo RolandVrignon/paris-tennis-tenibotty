@@ -115,7 +115,7 @@ La première commande vérifie la migration sans écrire. La seconde crée une s
 }
 ```
 
-Cette option lance **deux réservations d’une heure en parallèle, dans deux Chromium distincts dès le préchauffage** : 20–21 h avec le premier compte et 21–22 h avec le second. Il n’y a aucune découverte commune : chaque compte se connecte vers 07 h 55, prépare indépendamment sa page club/date/heure sans la soumettre, puis commence sa propre recherche à 08 h et poll jusqu’à 08 h 02. La première session cherche uniquement 20 h et la seconde uniquement 21 h, chacune avec son tarif, ses joueurs et sa chaîne de replis. Les deux réservations peuvent donc aboutir sur des terrains ou replis différents. Seule la première valeur de `hours` fixe le début des deux heures ; le départ à 23 h est refusé pour éviter de changer de date.
+Cette option lance **deux réservations d’une heure en parallèle, dans deux Chromium distincts dès le préchauffage** : 20–21 h avec le premier compte et 21–22 h avec le second. Il n’y a aucune découverte commune : chaque compte se connecte vers 07 h 55, charge indépendamment l’agenda du club avant 07 h 59, puis le rafraîchit à partir de 08 h chaque seconde jusqu’à 08 h 02. La première session cherche uniquement 20 h et la seconde uniquement 21 h, chacune avec son tarif, ses joueurs et sa chaîne de replis. Les deux réservations peuvent donc aboutir sur des terrains ou replis différents. Seule la première valeur de `hours` fixe le début des deux heures ; le départ à 23 h est refusé pour éviter de changer de date.
 
 Les deux réservations ne sont pas atomiques. **Toute heure confirmée est conservée, même si seule la deuxième réussit.** Une erreur, une absence ou une confirmation de l’une n’annule pas, ne bloque pas et ne relance pas l’autre. Hermes annonce un **succès partiel** et identifie le compte et l’heure obtenue. Aucune annulation automatique d’une réservation confirmée et aucune relance de la demande terminée. Une confirmation incertaine demande de vérifier le compte concerné. Les deux comptes de réservation doivent être distincts et correspondre aux joueurs présents ; cette option ne modifie pas les quotas du site. L’application des quotas au padel reste à vérifier auprès du centre.
 
@@ -303,13 +303,17 @@ Ajouter cette option au même niveau que `sport`, `players` et `fallbacks` :
 }
 ```
 
-Avec le choix principal padel et le repli tennis, le navigateur se connecte à **7 h 55**, cherche le padel à partir de **8 h**, puis relance une recherche au plus tôt toutes les **deux secondes**. Il attend chaque réponse et l’affichage des créneaux ou d’un résultat vide : aucune recherche ne se superpose à la précédente.
+Avec le choix principal padel et le repli tennis, le navigateur se connecte à **7 h 55** avec le compte de réservation et charge l’agenda du club pour être prêt avant **7 h 59** sur `page=recherche&action=rechercher_creneau`. Si la date demandée n’est pas encore exposée, il affiche une date antérieure disponible. Cette préparation soumet uniquement une recherche : aucun créneau n’est sélectionné avant l’ouverture.
 
-À **8 h 10**, si aucun créneau padel compatible n’a été sélectionné, il arrête la recherche répétée et fait **un seul passage sur les replis tennis**. Le checkout et ce passage final peuvent donc se terminer après 8 h 10. Une sélection réussie arrête les recherches. Une erreur de CAPTCHA ou de checkout est signalée, sans relance de réservation.
+À **8 h**, il rafraîchit cette même page au plus tôt toutes les **secondes**, sans ressaisir le club ni rouvrir le calendrier. Il attend chaque réponse et son rendu : les recherches ne se chevauchent pas. Dès que la date exacte demandée apparaît dans la rangée visible de ce club, il la sélectionne et lit les boutons correspondant à l’heure, au terrain et au tarif demandés. Le nombre total de disponibilités du jour ne garantit pas l’heure souhaitée.
+
+Le site peut afficher « Complet » dans l’entête tout en proposant des boutons réservables. Ces boutons datés priment sur ce libellé. Si la nouvelle case est désactivée, le bot recherche une fois cette date via le formulaire natif, puis conserve ce résultat pour les rafraîchissements suivants. Une session expirée ou une page de réservation inattendue arrête le parcours ; le bot ne recharge jamais une confirmation ou un paiement.
+
+À **8 h 02**, si aucun créneau padel compatible n’a été sélectionné, il arrête la recherche répétée et fait **un seul passage sur les replis tennis**. Le checkout et ce passage final peuvent donc se terminer après 8 h 02. Une sélection réussie arrête les recherches. Une erreur de CAPTCHA ou de checkout est signalée, sans relance de réservation.
 
 Le journal conserve les heures des tentatives et les résultats. L’expiration de la fenêtre ajoute `openingReviewRequired: true` à la demande et une indication dans le résultat Hermes : il faut revérifier l’ouverture et la disponibilité. Elle ne prouve pas que l’horaire est faux et ne modifie pas automatiquement l’horaire ni ne crée un nouveau monitoring.
 
-Sans `polling`, le parcours reste un seul passage. `fallbackMode: "each-cycle"` permet, si demandé, de vérifier tous les choix à chaque cycle. En lancement direct, la fenêtre commence au démarrage ; pour Hermes, sa fin reste fixée à l’ouverture prévue + dix minutes maximum, même si le lancement est retardé.
+Sans `polling`, le parcours reste un seul passage. `fallbackMode: "each-cycle"` permet, si demandé, de vérifier tous les choix à chaque cycle. En lancement direct, la fenêtre commence au démarrage ; pour Hermes, sa fin reste fixée à l’ouverture prévue + deux minutes maximum, même si le lancement est retardé.
 
 ## Compte de monitoring optionnel
 
@@ -324,7 +328,7 @@ Dans `config.fixed.json`, les comptes qui réservent restent dans `bookingAccoun
 
 - Bloc absent ou entièrement vide : le monitoring autonome utilise le premier compte de réservation.
 - Bloc complet : seul le monitoring autonome utilise `monitoringAccount`.
-- Les tentatives de réservation ignorent toujours ce bloc : elles se connectent à 07 h 55 avec le compte choisi, préparent la page du club, puis lancent la recherche à 08 h dans cette même session.
+- Les tentatives de réservation ignorent toujours ce bloc : elles se connectent à 07 h 55 avec le compte choisi, chargent l’agenda avant 07 h 59, puis le rafraîchissent à partir de 08 h dans cette même session.
 
 La Gratuité et les autres tarifs sont vérifiés directement avec le compte qui réserve. Les recherches répétées et les replis padel → tennis restent dans cette même session ; aucune bascule vers le compte de monitoring n’a lieu.
 

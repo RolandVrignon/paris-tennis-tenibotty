@@ -18,7 +18,7 @@ const catalog = { features: Object.entries(names).map(([sport, name], i) => ({ p
 // Exercise the real entry point against a local site, with no account or network service.
 const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brokenHold = false, uncertainSubmit = false, padelPrice = 'Gratuité', polling, padelAfter = 0, searchDelay = 0, renderDelay = 0, startDelay = 0, dualAccount = false, bookingPadel = true, consecutive = false, secondAvailable = true, secondUncertain = false, secondBrokenHold = false, explicitPlayers, secondMatchesMonitoring = false, secondOtherCourt = false, secondPrice = 'Tarif plein', firstAvailable = true, firstBrokenHold = false, firstUncertain = false, overlap = false, firstBookingLoginFailure = false, failedAbort = false, accountArray = false } = {}) => {
   const root = mkdtempSync(join(tmpdir(), 'tennis-browser-fallback-'))
-  const observed = { searches: [], holds: [], submissions: [], aborts: 0, searchTimes: [], loginAt: null, logins: [], loginCookies: [], searchAccounts: [], holdAccounts: [], submissionAccounts: [], holdHours: [], partners: [], paymentModes: [], abortAccounts: [], submissionHours: [], firstPaymentWaitedForSecond: false }
+  const observed = { searches: [], holds: [], holdTimes: [], submissions: [], aborts: 0, searchTimes: [], loginAt: null, logins: [], loginCookies: [], searchAccounts: [], holdAccounts: [], submissionAccounts: [], holdHours: [], partners: [], paymentModes: [], abortAccounts: [], submissionHours: [], firstPaymentWaitedForSecond: false }
   let releaseFirstPayment
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://fixture')
@@ -35,8 +35,8 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
       observed.loginAt = Date.now(); html = firstBookingLoginFailure && loggedIn === 'booking' ? '<div>Login failed</div>' : '<div class="main-informations">Connected</div>'
     }
     else if (url.searchParams.get('view') === 'start') html = '<button id="button_suivi_inscription">Login</button><form id="form-login" action="/login"><input id="username" name="username"><input id="password"><button>Connect</button></form>'
-    else if (url.searchParams.get('page') === 'recherche') html = `<script>var tennis = ${JSON.stringify(catalog)};</script>
-      <form action="/results"><input class="tokens-input-text"><input type="hidden" name="sport" id="sport">
+    else if (url.searchParams.get('page') === 'recherche' && url.pathname !== '/results') html = `<script>var tennis = ${JSON.stringify(catalog)};</script>
+      <form action="/results"><input type="hidden" name="page" value="recherche"><input type="hidden" name="action" value="rechercher_creneau"><input class="tokens-input-text"><input type="hidden" name="sport" id="sport">
       <div class="tokens-suggestions-list-element">${Object.entries(names).map(([kind, name]) => `<button type="button" onclick="document.querySelector('#sport').value='${kind}'">${name}</button>`).join('')}</div>
       <button type="button" id="when" onclick="document.querySelector('.date-picker').style.display='block'">Date</button>
       <div class="date-picker" style="display:none"><button type="button" dateiso="21/09/2026" onclick="this.parentElement.style.display='none'">21</button></div>
@@ -49,7 +49,7 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
         ? `<div class="row tennis-court"><div class="price-description">${account !== 'booking' ? secondPrice : sport === 'padel' ? padelPrice : 'Gratuité'}<br>Couvert</div>${firstAvailable ? `<a courtid="${ids[sport]}" datedeb="2026/09/21 20:00:00" href="/hold?sport=${sport}&hour=20">Book</a>` : ''}${consecutive && secondAvailable ? `<a courtid="${ids[sport]}" datedeb="2026/09/21 21:00:00" href="/hold?sport=${sport}&hour=21">Book next hour</a>` : ''}</div>`
         : '<div class="no-result">No slots</div>'
     } else if (url.pathname === '/hold' || url.pathname === '/partners') {
-      if (url.pathname === '/hold') { observed.holds.push(sport); observed.holdAccounts.push(account); observed.holdHours.push(hour) }
+      if (url.pathname === '/hold') { observed.holds.push(sport); observed.holdTimes.push(Date.now()); observed.holdAccounts.push(account); observed.holdHours.push(hour) }
       html = brokenHold || (firstBrokenHold && hour === '20') || (secondBrokenHold && hour === '21') ? '<div>Hold failed</div>' : `<div class="order-steps-infos"><h2>1 / 3 - Validation du court</h2></div>
         <form action="/payment"><input type="hidden" name="hour" value="${hour}"><input type="hidden" name="sport" value="${sport}"><input name="player1"><input name="player1"><button>Continue</button></form>
         <button id="btnCancelBooking" onclick="fetch('/tennis/rest/abortBooking',{method:'POST'})">Cancel</button>`
@@ -68,6 +68,7 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
       html = uncertainSubmit || (firstUncertain && hour === '20') || (secondUncertain && hour === '21') ? '<div>No confirmation received</div>' : `<div class="confirmReservation">Confirmed</div><div class="address">${names[sport]}</div><div class="date">21/09/2026 à ${hour}h</div><div class="court">${sport} 1</div>`
     }
     if (url.pathname === '/results' && secondOtherCourt) html += `<div class="row tennis-court"><div class="price-description">Tarif plein<br>Couvert</div><a courtid="9999" datedeb="2026/09/21 21:00:00" href="/hold?sport=${sport}&hour=21">Other court</a></div>`
+    if (url.pathname === '/results' && startDelay) html += `<div id="${names[sport].replaceAll(' ', '')}"><div class="date-picker refresh"><div class="date-item selected"><div dateiso="21/09/2026">21</div></div></div></div>`
     if (url.pathname === '/results' && renderDelay) html = `<div id="loadingComponent">Loading</div><script>setTimeout(() => { document.body.innerHTML = ${JSON.stringify(html)} }, ${renderDelay})</script>`
     res.setHeader('Content-Type', 'text/html; charset=utf-8')
     if (url.pathname === '/payment' && hour === '20' && overlap && !observed.submissionHours.includes('21')) { releaseFirstPayment = () => res.end(html); return }
@@ -190,11 +191,14 @@ test('primary polling expires before a single tennis fallback sweep', async t =>
   assert.match(result.output, /Search window expired/)
   assert.deepEqual(result.outcomes, ['dry-run-cancelled'])
 })
-test('warmup logs in before opening and starts no search before the opening instant', async t => {
+test('warmup loads the agenda before opening, then refreshes it at opening', async t => {
   const result = await runFixture(t, { startDelay: 2000, dryRun: true })
   assert.equal(result.code, 0, result.output)
   assert.ok(result.loginAt < result.searchStart)
-  assert.ok(result.searchTimes[0] >= result.searchStart)
+  assert.ok(result.searchTimes[0] < result.searchStart)
+  assert.ok(result.searchTimes[1] >= result.searchStart)
+  assert.equal(result.searches.length, 2)
+  assert.ok(result.holdTimes.every(at => at >= result.searchStart))
 })
 test('a slow search finishes before another request starts', async t => {
   const result = await runFixture(t, { polling: { intervalSeconds: 2, durationSeconds: 10 }, padelAfter: 1, searchDelay: 2200, dryRun: true })
@@ -268,7 +272,7 @@ test('two consecutive hours use each account tariff and its default guest, with 
 test('second booking can share monitoring credentials without a shared discovery session', async t => {
   const result = await runFixture(t, { consecutive: true, dualAccount: true, secondMatchesMonitoring: true })
   assert.equal(result.code, 0, result.output)
-  assert.deepEqual(result.logins, ['booking', 'monitoring'])
+  assert.deepEqual([...result.logins].sort(), ['booking', 'monitoring'])
   assert.deepEqual(result.loginCookies, ['', ''])
   assert.deepEqual([...result.submissionAccounts].sort(), ['booking', 'monitoring'])
 })
@@ -417,4 +421,16 @@ test('array accounts also work for a single booking with no legacy root account'
   assert.equal(result.code, 0, result.output)
   assert.deepEqual(result.holdAccounts, ['booking'])
   assert.equal(result.aborts, 1)
+})
+
+test('both booking accounts preload agendas and wait for opening before holding slots', async t => {
+  const result = await runFixture(t, { startDelay: 3000, consecutive: true, dryRun: true })
+  assert.equal(result.code, 0, result.output)
+  const before = result.searchTimes.flatMap((at, i) => at < result.searchStart ? [result.searchAccounts[i]] : [])
+  const after = result.searchTimes.flatMap((at, i) => at >= result.searchStart ? [result.searchAccounts[i]] : [])
+  assert.deepEqual(before.sort(), ['booking', 'second'])
+  assert.deepEqual(after.sort(), ['booking', 'second'])
+  assert.ok(result.holdTimes.every(at => at >= result.searchStart))
+  assert.equal(result.aborts, 2)
+  assert.deepEqual(result.submissions, [])
 })
