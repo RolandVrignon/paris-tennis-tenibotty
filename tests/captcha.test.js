@@ -37,6 +37,28 @@ test('no CAPTCHA makes no inference call', async t => {
   await waitForStep(page, '.ready', {}, () => assert.fail('Unexpected inference'))
 })
 
+test('a late booking step wakes the bounded visible wait without invoking recognition', async t => {
+  const page = await browser.newPage()
+  t.after(() => page.close())
+  await page.setContent('<div class="ready" hidden>Booking step</div>')
+  // Trigger the transition only once the event-driven wait has been armed.
+  const locator = page.locator.bind(page)
+  let waiting = false
+  page.locator = (...args) => {
+    const result = locator(...args)
+    const wait = result.waitFor.bind(result)
+    result.waitFor = async options => {
+      waiting = true
+      await page.evaluate(() => { setTimeout(() => { globalThis.document.querySelector('.ready').hidden = false }, 30) })
+      return wait(options)
+    }
+    return result
+  }
+  await waitForStep(page, '.ready', { timeoutMs: 1000 }, () => assert.fail('Unexpected recognition'))
+  assert.equal(waiting, true)
+  assert.equal(await locator('.ready').isVisible(), true)
+})
+
 test('recognized text unlocks continuation without confirming a booking', async t => {
   const page = await fixture(t)
   let calls = 0

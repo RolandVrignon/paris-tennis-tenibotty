@@ -10,6 +10,7 @@
   "courtType": [
     "Couvert"
   ],
+  "courtSelection": "all",
   "bookingAccount": "Roger Federer",
   "consecutive": {
     "bookingAccount": "Rafael Nadal"

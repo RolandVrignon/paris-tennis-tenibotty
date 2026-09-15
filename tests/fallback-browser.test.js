@@ -16,7 +16,7 @@ const catalog = { features: Object.entries(names).map(([sport, name], i) => ({ p
 } })) }
 
 // Exercise the real entry point against a local site, with no account or network service.
-const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brokenHold = false, uncertainSubmit = false, padelPrice = 'Gratuité', polling, padelAfter = 0, searchDelay = 0, renderDelay = 0, startDelay = 0, dualAccount = false, bookingPadel = true, consecutive = false, secondAvailable = true, secondUncertain = false, secondBrokenHold = false, explicitPlayers, secondMatchesMonitoring = false, secondOtherCourt = false, secondPrice = 'Tarif plein', firstAvailable = true, firstBrokenHold = false, firstUncertain = false, overlap = false, firstBookingLoginFailure = false, failedAbort = false, accountArray = false } = {}) => {
+const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brokenHold = false, uncertainSubmit = false, padelPrice = 'Gratuité', polling, padelAfter = 0, searchDelay = 0, renderDelay = 0, startDelay = 0, dualAccount = false, bookingPadel = true, consecutive = false, secondAvailable = true, secondUncertain = false, secondBrokenHold = false, explicitPlayers, secondMatchesMonitoring = false, secondOtherCourt = false, secondPrice = 'Tarif plein', firstAvailable = true, firstBrokenHold = false, firstUncertain = false, overlap = false, firstBookingLoginFailure = false, failedAbort = false, accountArray = false, courtSelection, courtType = ['Couvert'], lateAgenda = false } = {}) => {
   const root = mkdtempSync(join(tmpdir(), 'tennis-browser-fallback-'))
   const observed = { searches: [], holds: [], holdTimes: [], submissions: [], aborts: 0, searchTimes: [], loginAt: null, logins: [], loginCookies: [], searchAccounts: [], holdAccounts: [], submissionAccounts: [], holdHours: [], partners: [], paymentModes: [], abortAccounts: [], submissionHours: [], firstPaymentWaitedForSecond: false }
   let releaseFirstPayment
@@ -27,6 +27,7 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
     const account = req.headers.cookie?.includes('account=monitoring') ? 'monitoring' : req.headers.cookie?.includes('account=second') ? 'second' : 'booking'
     let html = ''
     if (url.pathname.endsWith('abortBooking')) { observed.aborts++; observed.abortAccounts.push(account); if (failedAbort) res.statusCode = 500; res.end('ok'); return }
+    if (url.pathname === '/calendar') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(['20/09/2026', ...(Date.now() >= searchStart ? ['21/09/2026'] : [])].map(date => `<button type="button" dateiso="${date}" onclick="document.querySelector('#searchDate').value='${date}';this.parentElement.style.display='none'">${date}</button>`).join('')); return }
     if (url.pathname === '/login') {
       const loggedIn = url.searchParams.get('username') === 'monitor@example.invalid' ? 'monitoring' : url.searchParams.get('username') === 'second@example.invalid' ? 'second' : 'booking'
       observed.logins.push(loggedIn)
@@ -36,9 +37,9 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
     }
     else if (url.searchParams.get('view') === 'start') html = '<button id="button_suivi_inscription">Login</button><form id="form-login" action="/login"><input id="username" name="username"><input id="password"><button>Connect</button></form>'
     else if (url.searchParams.get('page') === 'recherche' && url.pathname !== '/results') html = `<script>var tennis = ${JSON.stringify(catalog)};</script>
-      <form action="/results"><input type="hidden" name="page" value="recherche"><input type="hidden" name="action" value="rechercher_creneau"><input class="tokens-input-text"><input type="hidden" name="sport" id="sport">
+      <form action="/results"><input type="hidden" name="page" value="recherche"><input type="hidden" name="action" value="rechercher_creneau"><input class="tokens-input-text"><input type="hidden" name="sport" id="sport"><input id="searchDate" name="when" type="hidden" value="${lateAgenda ? '20/09/2026' : '21/09/2026'}">
       <div class="tokens-suggestions-list-element">${Object.entries(names).map(([kind, name]) => `<button type="button" onclick="document.querySelector('#sport').value='${kind}'">${name}</button>`).join('')}</div>
-      <button type="button" id="when" onclick="document.querySelector('.date-picker').style.display='block'">Date</button>
+      <button type="button" id="when" onclick="document.querySelector('.date-picker').style.display='block';${lateAgenda ? 'document.querySelector(\'.date-picker\').innerHTML=\'&lt;div id=loadingComponent&gt;Loading&lt;/div&gt;\';fetch(\'/calendar\').then(r=>r.text()).then(html=>{document.querySelector(\'.date-picker\').innerHTML=html})' : ''}">Date</button>
       <div class="date-picker" style="display:none"><button type="button" dateiso="21/09/2026" onclick="this.parentElement.style.display='none'">21</button></div>
       <button id="rechercher">Search</button></form>`
     else if (url.pathname === '/results') {
@@ -68,7 +69,9 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
       html = uncertainSubmit || (firstUncertain && hour === '20') || (secondUncertain && hour === '21') ? '<div>No confirmation received</div>' : `<div class="confirmReservation">Confirmed</div><div class="address">${names[sport]}</div><div class="date">21/09/2026 à ${hour}h</div><div class="court">${sport} 1</div>`
     }
     if (url.pathname === '/results' && secondOtherCourt) html += `<div class="row tennis-court"><div class="price-description">Tarif plein<br>Couvert</div><a courtid="9999" datedeb="2026/09/21 21:00:00" href="/hold?sport=${sport}&hour=21">Other court</a></div>`
-    if (url.pathname === '/results' && startDelay) html += `<div id="${names[sport].replaceAll(' ', '')}"><div class="date-picker refresh"><div class="date-item selected"><div dateiso="21/09/2026">21</div></div></div></div>`
+    if (url.pathname === '/results' && lateAgenda && url.searchParams.get('when') !== '21/09/2026') html = html.replaceAll('2026/09/21', '2026/09/20')
+    if (url.pathname === '/results' && startDelay && !lateAgenda) html += `<div id="${names[sport].replaceAll(' ', '')}"><div class="date-picker refresh"><div class="date-item selected"><div dateiso="21/09/2026">21</div></div></div></div>`
+    if (url.pathname === '/results' && lateAgenda) html += `<div id="${names[sport].replaceAll(' ', '')}"><div class="date-picker refresh"><div class="date-item selected"><div dateiso="20/09/2026">20</div></div>${Date.now() >= searchStart ? '<div class="date-item item-full"><div dateiso="21/09/2026">21</div></div>' : ''}</div></div>`
     if (url.pathname === '/results' && renderDelay) html = `<div id="loadingComponent">Loading</div><script>setTimeout(() => { document.body.innerHTML = ${JSON.stringify(html)} }, ${renderDelay})</script>`
     res.setHeader('Content-Type', 'text/html; charset=utf-8')
     if (url.pathname === '/payment' && hour === '20' && overlap && !observed.submissionHours.includes('21')) { releaseFirstPayment = () => res.end(html); return }
@@ -92,7 +95,7 @@ const runFixture = async (t, { padel = true, tennis = true, dryRun = false, brok
     account: { name: 'First', email: 'fixture@example.invalid', password: 'fixture', defaultPlayers: [{ firstName: 'Second', lastName: 'Player' }] },
     bookingAccounts: { second: { name: 'Second', email: secondMatchesMonitoring ? 'monitor@example.invalid' : 'second@example.invalid', password: 'second-fixture', priceType: ['Tarif plein'], defaultPlayers: [{ firstName: 'First', lastName: 'Player' }] } },
     consecutive: consecutive ? { bookingAccount: 'second' } : undefined, monitoringAccount: dualAccount ? { email: 'monitor@example.invalid', password: 'monitor-fixture' } : undefined, ai: { enable: false }, ntfy: { enable: false },
-    sport: 'padel', date: '21/09/2026', locations: [names.padel], hours: ['20'], courtType: ['Couvert'], priceType: ['Gratuité'],
+    sport: 'padel', date: '21/09/2026', locations: [names.padel], hours: ['20'], courtType, courtSelection, priceType: ['Gratuité'],
     players: explicitPlayers || (consecutive ? undefined : [{ firstName: 'Test', lastName: 'Partner' }]), polling, fallbacks: [{ sport: 'tennis', locations: [names.tennis] }],
   }))
   if (accountArray) {
@@ -433,4 +436,15 @@ test('both booking accounts preload agendas and wait for opening before holding 
   assert.ok(result.holdTimes.every(at => at >= result.searchStart))
   assert.equal(result.aborts, 2)
   assert.deepEqual(result.submissions, [])
+})
+
+test('fast any mode hands checkout to both warm spare tabs when the new date appears disabled', async t => {
+  const result = await runFixture(t, { startDelay: 4000, consecutive: true, dryRun: true, lateAgenda: true, courtSelection: 'first', courtType: 'any' })
+  assert.equal(result.code, 0, result.output)
+  assert.deepEqual([...result.holdHours].sort(), ['20', '21'])
+  assert.deepEqual([...result.holdAccounts].sort(), ['booking', 'second'])
+  assert.ok(result.holdTimes.every(at => at >= result.searchStart))
+  assert.equal(result.aborts, 2)
+  assert.deepEqual(result.submissions, [])
+  assert.equal(result.searches.length, 6)
 })

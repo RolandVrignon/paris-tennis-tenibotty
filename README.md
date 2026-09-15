@@ -237,6 +237,19 @@ Tu peux autoriser `Couvert`, `Découvert` ou les deux, et renseigner un à trois
 
 Ici, seuls les courts 1 et 2 de Max Rousié sont acceptés ; tous les courts de Suzanne Lenglen restent possibles, sous réserve des autres filtres.
 
+### Prendre le premier court compatible
+
+Pour un club dont les terrains te conviennent tous, activer cette option dans `config.request.json` :
+
+```json
+"courtSelection": "first",
+"courtType": "any"
+```
+
+`first` arrête la lecture dès le premier court compatible. `courtType: "indoor"` accepte uniquement les courts couverts, `"outdoor"` uniquement les découverts, et `"any"` les deux. Les tableaux historiques (`["Couvert"]`, par exemple) restent acceptés. L’heure, le tarif et les numéros de courts autorisés sont toujours respectés ; `any` ne veut pas dire n’importe quelle heure ou n’importe quel tarif.
+
+Sans `courtSelection`, ou avec `"all"`, le parcours existant est conservé : lire tous les candidats puis choisir le premier compatible. Cette option ne change jamais le nombre de réservations. Elle s’applique aux clubs du choix concerné ; chaque repli peut préciser son propre `courtSelection` et son propre `courtType`, ou hériter du choix principal. Pour utiliser des réglages différents entre clubs, les placer dans des choix séparés.
+
 Les dates utilisent `D/M/YYYY` ou `DD/MM/YYYY`. Sans date en lancement direct, le script cherche à J+6. Une demande Hermes exige une date explicite.
 
 [Tous les champs et la migration de l’ancien `config.json` →](docs/guide.md#configuration)
@@ -307,7 +320,9 @@ Avec le choix principal padel et le repli tennis, le navigateur se connecte à *
 
 À **8 h**, il rafraîchit cette même page au plus tôt toutes les **secondes**, sans ressaisir le club ni rouvrir le calendrier. Il attend chaque réponse et son rendu : les recherches ne se chevauchent pas. Dès que la date exacte demandée apparaît dans la rangée visible de ce club, il la sélectionne et lit les boutons correspondant à l’heure, au terrain et au tarif demandés. Le nombre total de disponibilités du jour ne garantit pas l’heure souhaitée.
 
-Le site peut afficher « Complet » dans l’entête tout en proposant des boutons réservables. Ces boutons datés priment sur ce libellé. Si la nouvelle case est désactivée, le bot recherche une fois cette date via le formulaire natif, puis conserve ce résultat pour les rafraîchissements suivants. Une session expirée ou une page de réservation inattendue arrête le parcours ; le bot ne recharge jamais une confirmation ou un paiement.
+Le site peut afficher « Complet » dans l’entête tout en proposant des boutons réservables. Ces boutons datés priment sur ce libellé. Si la date était absente au préchauffage, un deuxième onglet prépare le formulaire natif du même club dans la même connexion, sans le soumettre ni sélectionner de créneau. Si la nouvelle case est désactivée, cet onglet sélectionne la date et soumet sa recherche : le bot poursuit alors dans cet onglet, sans ressaisir le club. Un formulaire périmé est remplacé par une recherche normale. Une session expirée ou une page de réservation inattendue arrête le parcours ; le bot ne recharge jamais une confirmation ou un paiement.
+
+Entre les étapes du checkout, l’attente peut se terminer dès que l’écran suivant apparaît. Les délais nécessaires au traitement de la saisie par le CAPTCHA sont conservés.
 
 À **8 h 02**, si aucun créneau padel compatible n’a été sélectionné, il arrête la recherche répétée et fait **un seul passage sur les replis tennis**. Le checkout et ce passage final peuvent donc se terminer après 8 h 02. Une sélection réussie arrête les recherches. Une erreur de CAPTCHA ou de checkout est signalée, sans relance de réservation.
 

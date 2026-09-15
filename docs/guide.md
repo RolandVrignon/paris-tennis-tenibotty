@@ -136,12 +136,13 @@ Plusieurs valeurs peuvent être acceptées, mais leur ordre ne définit pas une 
 | Champ | Utilisation |
 | --- | --- |
 | `polling` | Option de recherche répétée : `intervalSeconds` (1 à 60, 1 par défaut), `durationSeconds` (au plus 120, soit jusqu’à 08 h 02 pour une ouverture à 08 h), `fallbackMode` (`after-window` par défaut ou `each-cycle`). Sans ce champ, un seul passage. |
-| `fallbacks` | Liste ordonnée de replis : `sport` et `locations` obligatoires ; `hours` et `courtType` facultatifs, hérités du choix principal. |
+| `fallbacks` | Liste ordonnée de replis : `sport` et `locations` obligatoires ; `hours`, `courtType` et `courtSelection` facultatifs, hérités du choix principal. |
 | `sport` | `tennis` par défaut ; `padel` pour les pistes de padel. Le mode padel accepte un à trois partenaires. |
 | `locations` | Clubs par ordre de préférence ; leurs noms sont vérifiés avant réservation. |
 | `date` | Date du terrain au format `D/M/YYYY` ou `DD/MM/YYYY`. Facultative en lancement direct : sans date, le script cherche à J+6. Obligatoire pour une demande Hermes. |
 | `hours` | Heures par ordre de préférence, par exemple `["18", "19"]`. |
-| `courtType` | `Couvert`, `Découvert`, ou les deux. |
+| `courtType` | Tableau `Couvert`, `Découvert`, ou les deux ; raccourcis acceptés : `"indoor"`, `"outdoor"`, `"any"`. |
+| `courtSelection` | Facultatif : `"first"` prend le premier court compatible sans lire les suivants ; absent ou `"all"` conserve la lecture de tous les candidats. Ne change pas le nombre de réservations. Hérité par les replis, qui peuvent le remplacer. |
 | `players` | Un à trois partenaires ; facultatif si le compte sélectionné possède `defaultPlayers`. Une valeur explicite remplace ce défaut. |
 | `bookingAccount` | Nom unique du compte dans le tableau `bookingAccounts`. Le premier est choisi par défaut puis son nom est enregistré dans la demande. |
 | `consecutive` | `{ "bookingAccount": "Rafael Nadal" }` lance les deux heures en parallèle dans deux Chromium distincts, sur le même terrain ; `players` peut y remplacer les partenaires par défaut du second compte. Toute heure confirmée est conservée, y compris la deuxième seule. |
@@ -687,7 +688,7 @@ Si `monitoringAccount` est absent, nul ou entièrement vide, le compte choisi po
 
 Au lancement programmé (07:55), le navigateur se connecte au compte choisi et soumet la recherche du club pour charger son agenda avant 07:59 sur `page=recherche&action=rechercher_creneau`. Si la date cible est absente, une date antérieure exposée sert à ouvrir cet agenda. Aucun bouton de réservation n’est cliqué avant l’ouverture stockée (08:00).
 
-À 08:00, le bot recharge la même page au plus tôt chaque seconde et attend la date cible dans la rangée visible du bon club. Dès son apparition, il sélectionne ce jour et attend la réponse native des créneaux avant de chercher l’heure et le tarif compatibles. Les boutons datés priment sur un compteur ou un libellé « Complet » contradictoire. Une case désactivée nécessite une recherche native de la date, puis ce résultat est conservé pour les rechargements suivants. Aucun rechargement n’est effectué après une navigation vers un paiement ou une réservation ; une erreur de session est signalée. Le polling reste borné à 120 secondes depuis l’ouverture, puis le repli configuré est essayé une fois.
+À 08:00, le bot recharge la même page au plus tôt chaque seconde et attend la date cible dans la rangée visible du bon club. Dès son apparition, il sélectionne ce jour et attend la réponse native des créneaux avant de chercher l’heure et le tarif compatibles. Les boutons datés priment sur un compteur ou un libellé « Complet » contradictoire. Si la date était absente au préchauffage, un second onglet de la même connexion prépare le formulaire du club, sans recherche ni sélection de créneau. Une case désactivée utilise ce formulaire une fois et la réservation continue dans cet onglet ; si le formulaire a changé, une recherche normale le remplace. Le résultat est conservé pour les rechargements suivants. Les attentes entre écrans du checkout se terminent dès l’apparition de l’étape suivante ; les délais de traitement du CAPTCHA restent conservés. Aucun rechargement n’est effectué après une navigation vers un paiement ou une réservation ; une erreur de session est signalée. Le polling reste borné à 120 secondes depuis l’ouverture, puis le repli configuré est essayé une fois.
 
 `monitoringAccount` n’intervient jamais dans une tentative de réservation programmée. Après sélection, une erreur de checkout arrête la tâche comme auparavant. Les tests dry-run utilisent également le compte choisi pour la sélection et l’annulation temporaire.
 

@@ -47,10 +47,12 @@ const bookTennis = async (config, { leg = 0, targetsOverride, searchStartOverrid
   let browser
   debugLog(`mode=${DRY_RUN_MODE ? 'dry-run' : 'real'} browser=${HEADED_MODE ? 'headed' : 'headless'} captchaAI=${config.ai?.enable === false ? 'disabled' : 'enabled'}`)
   let page
+  let context
   const openSession = async () => {
-    if (page) await page.close()
-    // browser.newPage creates an isolated context; closing it discards its cookies.
-    page = await browser.newPage()
+    if (context) await context.close()
+    // One isolated account context, with room for a read-only spare search tab.
+    context = await browser.newContext()
+    page = await context.newPage()
     page.setDefaultTimeout(90000)
 
     if (DEBUG_MODE) page.on('pageerror', error => debugLog(`page-error role=booking message=${JSON.stringify(error.message)}`))
@@ -106,6 +108,7 @@ const bookTennis = async (config, { leg = 0, targetsOverride, searchStartOverrid
         }
         throw error
       }
+      page = prepared?.activePage ?? page
       if (!prepared?.agenda) prepared = undefined
       if (deadline && Date.now() >= deadline) continue
       if (!result.dateSelectable) {

@@ -23,6 +23,7 @@ const fixture = async (t, { full = false, exposed = false, noHour = false, delay
     const data = new URLSearchParams(body)
     res.setHeader('Content-Type', 'text/html; charset=utf-8')
     if (url.pathname === '/hold') { observed.holds++; res.end('Hold'); return }
+    if (url.pathname === '/calendar') { res.end(['20/09/2026', ...(state.exposed && !state.calendarLag ? [dateKey] : [])].map(date => `<button type="button" dateiso="${date}" onclick="document.querySelector('#date').value='${date}';this.parentElement.style.display='none'">${date}</button>`).join('')); return }
     if (url.searchParams.get('action') === 'ajax_rechercher_creneau') {
       observed.selections.push(Object.fromEntries(data))
       setTimeout(() => res.end(state.noHour ? '<div class="no-result">Complet</div>' : slot('2026/09/21')), delay)
@@ -34,7 +35,7 @@ const fixture = async (t, { full = false, exposed = false, noHour = false, delay
         <form method="post" action="/?page=recherche&action=rechercher_creneau">
         <input class="tokens-input-text"><input name="selWhereTennisName" value="${location}"><input name="when" id="date" value="20/09/2026">
         <div class="tokens-suggestions-list-element"><button type="button">${location}</button></div>
-        <button type="button" id="when" onclick="document.querySelector('.date-picker').style.display='block'">Calendar</button>
+        <button type="button" id="when" onclick="const cal=document.querySelector('.date-picker');cal.style.display='block';cal.innerHTML='&lt;div id=loadingComponent&gt;Loading&lt;/div&gt;';fetch('/calendar').then(r=>r.text()).then(html=>{cal.innerHTML=html})">Calendar</button>
         <div class="date-picker" style="display:none">${['20/09/2026', ...(state.exposed ? [dateKey] : [])].map(date => `<button type="button" dateiso="${date}" onclick="document.querySelector('#date').value='${date}';this.parentElement.style.display='none'">${date}</button>`).join('')}</div>
         <button id="rechercher">Search</button></form>`)
       return
@@ -64,7 +65,8 @@ const fixture = async (t, { full = false, exposed = false, noHour = false, delay
   await once(server, 'listening')
   const browser = await chromium.launch({ headless: true })
   t.after(async () => { await browser.close(); server.closeAllConnections(); server.close() })
-  const page = await browser.newPage()
+  const context = await browser.newContext()
+  const page = await context.newPage()
   page.setDefaultTimeout(2000)
   const options = { target, date: dayjs('2026-09-21'), polling: true, priceTypes: ['Gratuité'], captchaOptions: { ai: { enable: false } }, searchUrl: `http://127.0.0.1:${server.address().port}/?page=recherche&view=search` }
   const prepared = await prepareOpeningAgenda(page, options)
@@ -74,7 +76,7 @@ const fixture = async (t, { full = false, exposed = false, noHour = false, delay
 
 test('warmup reaches results on J-1; timed refresh waits for exact visible Jour J and native slot response', async t => {
   const f = await fixture(t, { delay: 150 })
-  assert.equal(f.observed.forms, 1)
+  assert.equal(f.observed.forms, 2)
   assert.equal(f.observed.searches.length, 1)
   assert.equal(f.observed.holds, 0)
   const opening = Date.now() + 150
@@ -90,7 +92,7 @@ test('warmup reaches results on J-1; timed refresh waits for exact visible Jour 
     }
   }
   assert.equal(attempt, 2)
-  assert.equal(f.observed.forms, 1)
+  assert.equal(f.observed.forms, 2)
   assert.equal(f.observed.searches[1].method, 'POST')
   assert.equal(f.observed.searches[1].body, f.observed.searches[0].body)
   assert.ok(f.observed.searches[1].at >= opening)
@@ -157,12 +159,38 @@ test('bookable exact-date slots take precedence over a contradictory full header
   assert.equal(f.observed.forms, 1)
 })
 
-test('a disabled new day uses native form once, then reloads the target-date POST', async t => {
+test('a disabled new day submits the warm spare, without reopening the form, then reloads its POST', async t => {
   const f = await fixture(t, { full: true, contradictoryCounts: true })
+  const spare = f.prepared.spare.page
+  assert.equal(f.observed.forms, 2)
   f.state.exposed = true
   assert.equal((await f.search()).candidates.length, 1)
   assert.equal(f.observed.forms, 2)
   assert.equal((await f.search()).candidates.length, 1)
   assert.equal(f.observed.forms, 2)
   assert.match(f.observed.searches.at(-1).body, /when=21%2F09%2F2026/)
+  assert.equal(f.prepared.activePage, spare)
+  assert.equal(f.prepared.spare, undefined)
+  assert.equal(f.observed.holds, 0)
+})
+
+test('a replaced spare is never submitted; the original tab performs a fresh search', async t => {
+  const f = await fixture(t, { full: true, contradictoryCounts: true })
+  const spare = f.prepared.spare.page
+  await spare.goto(f.options.searchUrl)
+  f.state.exposed = true
+  assert.equal((await f.search()).candidates.length, 1)
+  assert.equal(f.prepared.activePage, undefined)
+  assert.equal(f.observed.forms, 4)
+  assert.equal(f.observed.holds, 0)
+})
+
+test('a lagging spare calendar cannot submit the earlier date as the requested date', async t => {
+  const f = await fixture(t, { full: true, contradictoryCounts: true })
+  f.state.exposed = true
+  f.state.calendarLag = true
+  assert.deepEqual(await f.search(), { location, dateSelectable: false, candidates: [] })
+  assert.equal(f.observed.searches.length, 2)
+  assert.equal(f.prepared.spare, undefined)
+  assert.equal(f.observed.holds, 0)
 })

@@ -86,7 +86,7 @@ test('credit page extraction performs only a GET and no payment or reservation s
       const url = route.request().url()
       await route.fulfill({ contentType: 'text/html', body: url === CREDITS_URL ? full : '<button id="button_suivi_inscription">Login</button><input id="username"><input id="password"><div id="form-login"><button>Login</button></div><div class="main-informations">Connected</div>' })
     })
-    return { newPage: () => context.newPage(), close: () => context.close() }
+    return { newContext: async () => context, close: () => context.close() }
   }
   try {
     const result = await readProfileCredits({ config: { ...accounts, bookingAccount: 'Rafael Nadal' } })

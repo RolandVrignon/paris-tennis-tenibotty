@@ -13,8 +13,12 @@ Hidden duplicates, the rightmost position, daily counts and other clubs do not.
 When the day appears, use its native selection and wait for the exact date/club
 `ajax_rechercher_creneau` response before reading candidates. The site's full-day
 label can contradict its bookable slot rows. Existing exact-date buttons are usable;
-a disabled new date instead requires one native search form submission. Later
-refreshes then reuse that exact-date results POST. Never force a disabled control.
+a disabled new date uses the spare native form prepared before opening in the same
+account context. Verify its document marker, consume it once, select the exact date,
+then continue results and checkout in that tab. If it was replaced or closed, use
+a fresh native search. The original tab stays idle; no parallel booking occurs
+within one account. Later refreshes reuse the exact-date results POST. Never force
+a disabled control.
 
 A results reload is read-only but must remain tied to the original document and
 URL. Invalidate the marker before navigation; stop on redirect, HTTP error, replaced
@@ -36,3 +40,8 @@ results, contradictory counts, session loss, stale document rejection, non-overl
 polling, fallback and independent consecutive outcomes. Run these plus the complete
 suite, ESLint and `git diff --check`. Fixture success does not establish live booking
 success or guarantee availability at the next opening.
+
+Optional `courtSelection: "first"` performs a single browser read and stops at the
+first fully compatible candidate, retaining hour priority and tariff/court filters.
+The default scan remains unchanged. Checkout waits wake on the next visible step
+instead of blind 250 ms sleeps; CAPTCHA input processing delays remain intact.
