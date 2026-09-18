@@ -56,6 +56,7 @@ Avec Hermes, la demande devient une tentative ponctuelle sur ton VPS. Tu peux en
 | **Tenter à l’ouverture** | Prépare une demande ponctuelle avec Hermes et prépare le navigateur à 7 h 55 et commence les recherches à 8 h, six jours avant le match. |
 | **Tester avant de réserver** | Propose un dry-run visible qui va jusqu’au paiement puis libère la réservation temporaire. |
 | **Gérer la suite** | Consulte la réservation courante, l’annule sur demande et génère un événement ICS après confirmation. |
+| **Repérer une annulation** | Lit le planning public et cible ensuite le même créneau dans le parcours connecté, sans confondre le signal `LIBRE` avec une réservation possible. |
 
 ## Comptes nommés et partenaires habituels
 
@@ -361,6 +362,21 @@ npm run availability:monitor -- --club "Padel Jules Ladoumègue" --sport padel \
 ```
 
 Cette commande doit être lancée pendant la fenêtre ou au plus dix minutes avant. Ajouter `--check` pour valider les paramètres sans navigateur. Le monitoring reste actif jusqu’à la fin de la fenêtre, même si des créneaux apparaissent. Trois erreurs consécutives l’arrêtent et sont signalées.
+
+### Signal d’annulation du planning public
+
+Le planning public du club peut afficher `LIBRE` avant que ce créneau soit réellement exposé dans la recherche connectée. Pour examiner les soirées ciblées sans connexion et sans réserver :
+
+```sh
+npm run planning:scan -- --club "Edouard Pailleron" \
+  --dates 21/09/2026,23/09/2026,24/09/2026 --hours 19,20
+```
+
+Ajouter `--connected --sport tennis` (ou `padel`) relit les mêmes dates dans la recherche connectée, avec le compte de monitoring et le blocage des endpoints de réservation. Le rapport distingue donc le signal `LIBRE` public des boutons réellement `bookable`; il ne sélectionne aucun bouton.
+
+La commande retourne les cellules des courts et sépare les cellules `free` des cellules occupées, avec l’horodatage public de réservation quand il est affiché. Une cellule libre déjà observée est `free_unknown_age`; seul un passage `occupied` → `free` entre deux relevés est un signal `became_free` d’annulation récente. Ce signal ne constitue ni une garantie de republication, ni une autorisation de réserver, ni une identité de court exploitable seule.
+
+Lors d’un changement de titulaire explicitement confirmé, la récupération conserve le tuple prévalidé (club, court, date et heure). Après l’annulation vérifiée, elle relit le planning public comme signal précoce et relance la **recherche connectée de ce seul créneau** au plus une fois par minute pendant dix minutes. Elle ne choisit jamais un repli, une autre heure ou un autre court. Une lecture publique indisponible n’empêche pas la vérification connectée; une confirmation incertaine impose toujours le rapprochement des comptes.
 
 Le rapport distingue les créneaux affichés et ceux accessibles au compte. Il indique le dernier relevé vide et la première apparition ; l’intervalle réellement mesuré dépend des réponses du site. Des créneaux déjà présents au premier relevé ne permettent pas de déduire leur heure d’ouverture. Les erreurs et CAPTCHA ne sont jamais comptés comme des résultats vides.
 

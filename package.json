@@ -38,6 +38,7 @@
     "booking:manage": "node scripts/booking-manager.js",
     "hermes:install": "node scripts/install-hermes-skill.js",
     "availability:monitor": "node scripts/monitor-availability.js",
+    "planning:scan": "node scripts/scan-public-planning.js",
     "accounts:list": "node scripts/tennis.js accounts list",
     "credits:list": "node scripts/tennis.js credits list",
     "captcha:warmup": "node scripts/warm-captcha-space.js",

@@ -144,7 +144,7 @@ The preview expires after ten minutes. A generic request to implement this capab
 node '{{PROJECT_DIR}}/scripts/transfer-reservation.js' execute --id <transfer-plan-id> --confirm --accept-release-risk
 ```
 
-The helper connects two isolated browsers, repeats preflight, verifies source cancellation, then searches only the released slot for up to thirty seconds (at most one search start every two seconds). It submits the destination booking once using its native free/carnet checkout and verifies its account reservation. There is no other-hour, other-court or other-account fallback, no automatic restoration on the source, and no alteration of a separate confirmed hour. Never replace this command with independent cancel and booking commands.
+The helper connects two isolated browsers, repeats preflight, verifies source cancellation, then observes the public planning as an early signal and searches only the released slot for up to ten minutes (at most one connected search start per minute). The planning can say `LIBRE` before the connected page accepts the court; a missing or unreadable planning cell does not suppress that exact-slot check. It submits the destination booking once using its native free/carnet checkout and verifies its account reservation. There is no other-hour, other-court or other-account fallback, no automatic restoration on the source, and no alteration of a separate confirmed hour. Never replace this command with independent cancel and booking commands.
 
 Read the audit with `transfer-reservation.js show --id <transfer-plan-id>`. `transferred` means the source cancellation and destination reservation were both verified. `blocked` means this run did not cancel the source. `released_unrecovered` means the source was cancelled but the replacement was not confirmed; tell the user the hour may be lost. `needs_reconciliation` means cancellation, payment or hold cleanup is uncertain: inspect both accounts, do not replay the plan, and do not delete its retained operation lock before reconciling account state and checking the owning process. A started plan cannot execute again, including after interruption. Other booking commands do not automatically notice or adjust previously generated calendar files; tell the user the account holder changed and update their calendar only when requested.
 
@@ -253,6 +253,26 @@ Keep fixed configuration private; no secrets in cron prompts or names. Do not al
 When asked to measure when a club opens availability, use `scripts/monitor-availability.js`, not the booking runner or a dry-run that holds a court. Required flags: `--club`, `--date`, `--start` and `--end` (timestamps with timezone); optional `--sport padel`, `--interval-seconds 2`, `--output-dir`, `--check`. It observes every hour for the specified club and sport. It never selects a slot, continues through the bounded window, and stops on three consecutive errors.
 
 Schedule one no-agent Hermes job running a shell wrapper in `{{PROJECT_DIR}}`, with an explicit delivery destination verified from the existing chat route. Ensure the Hermes script timeout exceeds the monitoring window plus a margin. Preserve other booking jobs. Read the JSONL observations and JSON report: distinguish first visible slots, first account-bookable slots, a preceding empty sample, errors, and availability already present at the first successful sample. Report the measured interval, not an exact server opening time or an assumed J+6 rule. Do not modify booking schedules from one sample without a user request.
+
+## Public planning cancellation signals
+
+When asked to find courts freed by a recent cancellation, start with the public club planning and optionally compare it to the authenticated search:
+
+```sh
+node '{{PROJECT_DIR}}/scripts/scan-public-planning.js' --club 'Edouard Pailleron' \
+  --dates 21/09/2026,23/09/2026,24/09/2026 --hours 19,20 --connected --sport tennis
+```
+
+Use `--sport padel` for `Padel Jules Ladoumègue`. The public page only exposes its current seven-day window; report an unavailable requested date rather than guessing another week. This command is read-only: the connected leg uses the monitoring identity when configured and blocks reservation/abort endpoints. It must never be replaced with a booking runner or a dry-run merely to inspect availability.
+
+Interpret results precisely:
+
+1. A public `LIBRE` cell is an early **signal**, not proof that the account can reserve it. Report it as `free_unknown_age` unless a prior saved observation of the same club/date/hour/court was occupied.
+2. Only an observed `occupied` → `free` transition is a `became_free` signal of a recent cancellation. The planning does not provide a cancellation timestamp; one scan alone cannot establish recency.
+3. `connected.slots` with `bookable: true` establishes only that the authenticated search currently exposes a compatible button. It does not authorize booking, payment or a different court.
+4. If public and connected disagree, retain the exact tuple and recheck only that tuple. Do not widen hours, courts, sports, accounts or fallbacks because a planning cell is free.
+
+For an ordinary availability lookup, show public `free` cells and connected bookable slots separately, including observation times and failures. Do not create a recurring monitor, booking request, cancellation or notification unless the user explicitly asks. For an explicitly authorized account-to-account replacement, use the transfer workflow above: its ten-minute, once-per-minute recovery is already limited to the preflight-verified source slot and retains reconciliation safeguards.
 
 
 ## Optional monitoring account

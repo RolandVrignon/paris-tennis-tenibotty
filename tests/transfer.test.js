@@ -77,7 +77,7 @@ test('uncertain cancellation never starts target booking', async () => {
 test('lost slot gets bounded searches with no hold, fallback or restoration', async () => {
   const f = fixture({ find: async () => false })
   assert.equal((await f.run()).status, 'released_unrecovered')
-  assert.deepEqual(f.calls, ['preflight', 'cancel', 'find', 'find', 'find'])
+  assert.deepEqual(f.calls, ['preflight', 'cancel', 'find'])
 })
 
 test('pre-submission failure cleans only destination hold; uncertain submit never aborts', async () => {
