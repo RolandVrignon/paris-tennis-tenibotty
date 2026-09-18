@@ -181,7 +181,9 @@ Use the helper's `schedule`, `cronName`, `script`, `captchaWarmup`, and `request
 
 If `captchaWarmup.scheduleAt` is still in the future, first call Hermes `cronjob` with `action=create`, that schedule, `name=captchaWarmup.cronName`, `script=captchaWarmup.script`, `no_agent=true`, `repeat=1` and `workdir={{PROJECT_DIR}}`. This cron is best effort and needs no delivery. If it cannot be created or its time has passed, continue scheduling the booking and report that cold-start mitigation is absent.
 
-Then call Hermes `cronjob` with `action=create`, the returned booking `schedule`, `name=cronName`, `script`, `no_agent=true`, `repeat=1`, and `workdir={{PROJECT_DIR}}`. Omit `deliver` to preserve delivery to the originating chat/topic. Do not edit the Linux crontab.
+Then call Hermes `cronjob` with `action=create`, the returned booking `schedule`, `name=cronName`, `script`, `no_agent=false`, `repeat=1`, `skills=["tennis-booking","google-workspace"]`, `enabled_toolsets=["terminal","file"]`, and `workdir={{PROJECT_DIR}}`. Omit `deliver` to preserve delivery to the originating chat/topic. Do not edit the Linux crontab.
+
+Use a self-contained agent prompt that instructs Hermes to inspect the attached script output and `booking-manager.js show` state. Only for `succeeded`, `succeeded_with_warnings`, or confirmed legs of `partially_succeeded`, it must create one event per confirmed reservation in the primary Google Calendar. Before creating, it must search all selected calendars for exact duplicates and overlaps; duplicates suppress creation, while unrelated conflicts are warnings and do not block it. It must use Europe/Paris, the confirmed duration, club, and address. It must create nothing for failed, unavailable, uncertain, or dry-run states. Calendar failure is ancillary and must never trigger a booking replay. The final delivered answer must be concise, warm, natural French suitable for Telegram, and must not mention cron, job IDs, scripts, or technical implementation details unless the user must act on an error.
 
 Attach the booking job ID and, only when created, the warmup job ID:
 
