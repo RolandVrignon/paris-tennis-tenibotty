@@ -33,3 +33,23 @@ test('missing credit never chooses a new card payment or forces a disabled butto
   await assert.rejects(preparePayment(page), /No compatible existing credit/)
   assert.equal(await page.locator('#submit').isDisabled(), true)
 })
+
+test('reloads the native payment page once and reselects the credit when its first click is ignored', async t => {
+  const browser = await chromium.launch({ headless: true })
+  t.after(() => browser.close())
+  const page = await browser.newPage()
+  let visits = 0
+  await page.route('https://payment.test/**', route => {
+    visits += 1
+    const enablesCheckout = visits > 1
+    return route.fulfill({ contentType: 'text/html', body: `<div class="priceTable"><button class="price-item" paymentMode="existingTicket">Choice</button></div>
+      <div class="step-two"><button id="submit" disabled class="disabled">Etape suivante</button></div>
+      <script>document.querySelector('.price-item').onclick = () => { ${enablesCheckout ? 'const button = document.querySelector(\'#submit\'); button.disabled = false; button.classList.remove(\'disabled\')' : ''} }</script>` })
+  })
+  await page.goto('https://payment.test/checkout')
+
+  const submit = await preparePayment(page)
+
+  assert.equal(visits, 2)
+  assert.equal(await submit.isEnabled(), true)
+})
